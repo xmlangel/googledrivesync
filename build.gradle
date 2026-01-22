@@ -2,25 +2,5 @@
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false
-}
-dependencies {
-    // Google Sign-In
-    implementation 'com.google.android.gms:play-services-auth:21.0.0'
-    implementation 'com.google.android.gms:play-services-drive:17.0.0'
-
-    // Google API 클라이언트
-    implementation 'com.google.api-client:google-api-client-android:1.33.0'
-    implementation 'com.google.api-client:google-api-client-gson:1.33.0'
-    implementation('com.google.apis:google-api-services-drive:v3-rev20231110-2.0.0') {
-        exclude group: 'org.apache.httpcomponents'
-        exclude module: 'guava-jdk5'
-    }
-
-    // Kotlin Coroutines
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
-
-    // Lifecycle
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.1'
+    alias(libs.plugins.ksp) apply false
 }

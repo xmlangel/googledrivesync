@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.os.Build
+import androidx.compose.ui.platform.LocalContext
 import uk.xmlangel.googledrivesync.data.local.SyncPreferences
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
 
@@ -21,6 +23,7 @@ fun SyncSettingsScreen(
     onNavigateBack: () -> Unit,
     onScheduleSync: () -> Unit
 ) {
+    val context = LocalContext.current
     var syncInterval by remember { mutableStateOf(syncPreferences.syncIntervalMinutes) }
     var wifiOnly by remember { mutableStateOf(syncPreferences.syncWifiOnly) }
     var whileCharging by remember { mutableStateOf(syncPreferences.syncWhileCharging) }

@@ -89,6 +89,22 @@ class DriveServiceHelper(private val context: Context) {
     }
     
     /**
+     * List all files in a folder, handling pagination automatically
+     */
+    suspend fun listAllFiles(folderId: String? = null): List<DriveItem> {
+        val allFiles = mutableListOf<DriveItem>()
+        var pageToken: String? = null
+        
+        do {
+            val result = listFiles(folderId, pageSize = 100, pageToken = pageToken)
+            allFiles.addAll(result.files)
+            pageToken = result.nextPageToken
+        } while (pageToken != null)
+        
+        return allFiles
+    }
+
+    /**
      * Get file metadata
      */
     suspend fun getFileMetadata(fileId: String): DriveItem = withContext(Dispatchers.IO) {

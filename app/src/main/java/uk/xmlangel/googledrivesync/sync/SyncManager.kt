@@ -101,168 +101,28 @@ class SyncManager(private val context: Context) {
             var errors = 0
             val conflicts = mutableListOf<SyncConflict>()
             
-            // Get local files
-            val localFiles = scanLocalFolder(folder.localPath)
+            // Get local files (now including folders)
+            val localItems = scanLocalFolder(folder.localPath)
             
-            // Get drive files
-            val driveResult = driveHelper.listFiles(folder.driveFolderId)
-            val driveFiles = driveResult.files
+            // Get all drive files using the new pagination helper
+            val driveItems = driveHelper.listAllFiles(folder.driveFolderId)
             
-            logger.log("스캔 완료: 로컬=${localFiles.size}개, 드라이브=${driveFiles.size}개", folder.accountEmail)
+            logger.log("스캔 완료: 로컬=${localItems.size}개, 드라이브=${driveItems.size}개", folder.accountEmail)
             
-            // Build maps for comparison
-            val localFileMap = localFiles.associateBy { it.name }
-            val driveFileMap = driveFiles.associateBy { it.name }
+            // Use a unified recursive sync method
+            val result = syncDirectoryRecursive(
+                folder = folder,
+                localPath = folder.localPath,
+                driveFolderId = folder.driveFolderId,
+                localItems = localItems,
+                driveItems = driveItems
+            )
             
-            val allFileNames = (localFileMap.keys + driveFileMap.keys).toSet()
-            var currentIndex = 0
-            
-            for (fileName in allFileNames) {
-                currentIndex++
-                val localFile = localFileMap[fileName]
-                val driveFile = driveFileMap[fileName]
-                
-                // Update progress
-                _syncProgress.value = SyncProgress(
-                    currentFile = fileName,
-                    currentIndex = currentIndex,
-                    totalFiles = allFileNames.size,
-                    bytesTransferred = 0,
-                    totalBytes = localFile?.length() ?: driveFile?.size ?: 0,
-                    isUploading = driveFile == null
-                )
-                
-                when {
-                    // File exists only locally → Upload
-                    localFile != null && driveFile == null -> {
-                        if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                            logger.log("업로드 시작: $fileName", folder.accountEmail)
-                            val result = driveHelper.uploadFile(
-                                localPath = localFile.absolutePath,
-                                fileName = fileName,
-                                parentFolderId = folder.driveFolderId
-                            )
-                            if (result != null) {
-                                uploaded++
-                                logger.log("업로드 성공: $fileName", folder.accountEmail)
-                                trackSyncItem(folder, localFile, result.id, SyncStatus.SYNCED)
-                            } else {
-                                errors++
-                                logger.log("업로드 실패: $fileName", folder.accountEmail)
-                            }
-                        } else {
-                            skipped++
-                        }
-                    }
-                    
-                    // File exists only on Drive → Download
-                    localFile == null && driveFile != null -> {
-                        if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
-                            if (!driveFile.isFolder) {
-                                logger.log("다운로드 시작: $fileName", folder.accountEmail)
-                                val destPath = "${folder.localPath}/${driveFile.name}"
-                                val success = driveHelper.downloadFile(driveFile.id, destPath)
-                                if (success) {
-                                    downloaded++
-                                    logger.log("다운로드 성공: $fileName", folder.accountEmail)
-                                    trackSyncItem(folder, File(destPath), driveFile.id, SyncStatus.SYNCED)
-                                } else {
-                                    errors++
-                                    logger.log("다운로드 실패: $fileName", folder.accountEmail)
-                                }
-                            }
-                        } else {
-                            skipped++
-                        }
-                    }
-                    
-                    // File exists in both → Check for updates or conflicts
-                    localFile != null && driveFile != null -> {
-                        val localModified = localFile.lastModified()
-                        val driveModified = driveFile.modifiedTime
-                        
-                        val existingItem = syncItemDao.getSyncItemByLocalPath(localFile.absolutePath)
-                        val lastSyncedAt = existingItem?.lastSyncedAt ?: 0L
-                        
-                        val isLocalUpdated = localModified > lastSyncedAt
-                        val isDriveUpdated = driveModified > lastSyncedAt
-                        
-                        when {
-                            // Case 1: Both updated → Conflict
-                            isLocalUpdated && isDriveUpdated -> {
-                                val conflict = SyncConflict(
-                                    syncItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
-                                    localFileName = fileName,
-                                    localModifiedAt = localModified,
-                                    localSize = localFile.length(),
-                                    driveFileName = driveFile.name,
-                                    driveModifiedAt = driveModified,
-                                    driveSize = driveFile.size
-                                )
-                                
-                                val defaultResolution = syncPreferences.defaultConflictResolution
-                                if (defaultResolution != null) {
-                                    val success = resolveConflict(conflict, defaultResolution)
-                                    if (success) {
-                                        if (defaultResolution == ConflictResolution.USE_LOCAL) uploaded++
-                                        else if (defaultResolution == ConflictResolution.USE_DRIVE) downloaded++
-                                        else if (defaultResolution == ConflictResolution.KEEP_BOTH) downloaded++
-                                    } else {
-                                        errors++
-                                    }
-                                } else {
-                                    conflicts.add(conflict)
-                                }
-                            }
-                            
-                            // Case 2: Only Local updated → Upload
-                            isLocalUpdated -> {
-                                if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                                    logger.log("업데이트 업로드 시작: $fileName", folder.accountEmail)
-                                    val result = driveHelper.updateFile(
-                                        fileId = existingItem?.driveFileId ?: driveFile.id,
-                                        localPath = localFile.absolutePath
-                                    )
-                                    if (result != null) {
-                                        uploaded++
-                                        logger.log("업데이트 업로드 성공: $fileName", folder.accountEmail)
-                                        updateSyncItem(existingItem!!, localFile, driveFile.id, SyncStatus.SYNCED)
-                                    } else {
-                                        errors++
-                                        logger.log("업데이트 업로드 실패: $fileName", folder.accountEmail)
-                                    }
-                                } else {
-                                    skipped++
-                                }
-                            }
-                            
-                            // Case 3: Only Drive updated → Download
-                            isDriveUpdated -> {
-                                if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
-                                    logger.log("업데이트 다운로드 시작: $fileName", folder.accountEmail)
-                                    val destPath = localFile.absolutePath
-                                    val success = driveHelper.downloadFile(driveFile.id, destPath)
-                                    if (success) {
-                                        downloaded++
-                                        logger.log("업데이트 다운로드 성공: $fileName", folder.accountEmail)
-                                        updateSyncItem(existingItem ?: createSyncItem(folder, localFile, driveFile.id), localFile, driveFile.id, SyncStatus.SYNCED)
-                                    } else {
-                                        errors++
-                                        logger.log("업데이트 다운로드 실패: $fileName", folder.accountEmail)
-                                    }
-                                } else {
-                                    skipped++
-                                }
-                            }
-                            
-                            // Case 4: None updated → Skip
-                            else -> {
-                                skipped++
-                            }
-                        }
-                    }
-                }
-            }
+            uploaded = result.uploaded
+            downloaded = result.downloaded
+            skipped = result.skipped
+            errors = result.errors
+            conflicts.addAll(result.conflicts)
             
             // Update history
             historyDao.completeHistory(
@@ -352,14 +212,164 @@ class SyncManager(private val context: Context) {
     }
     
     /**
-     * Scan local folder for files
+     * Recursive method to sync a directory tree
+     */
+    private suspend fun syncDirectoryRecursive(
+        folder: SyncFolderEntity,
+        localPath: String,
+        driveFolderId: String,
+        localItems: List<File>,
+        driveItems: List<uk.xmlangel.googledrivesync.data.drive.DriveItem>
+    ): RecursiveSyncResult {
+        var uploaded = 0
+        var downloaded = 0
+        var skipped = 0
+        var errors = 0
+        val conflicts = mutableListOf<SyncConflict>()
+
+        val localMap = localItems.associateBy { it.name }
+        val driveMap = driveItems.associateBy { it.name }
+        val allNames = (localMap.keys + driveMap.keys).toSet()
+
+        for (name in allNames) {
+            val localFile = localMap[name]
+            val driveFile = driveMap[name]
+
+            _syncProgress.value = SyncProgress(
+                currentFile = name,
+                currentIndex = 0, // Simplified for recursive calls
+                totalFiles = allNames.size,
+                bytesTransferred = 0,
+                totalBytes = localFile?.length() ?: driveFile?.size ?: 0,
+                isUploading = driveFile == null
+            )
+
+            when {
+                // Folder syncing
+                (localFile != null && localFile.isDirectory) || (driveFile != null && driveFile.isFolder) -> {
+                    val subDriveFolderId = when {
+                        localFile != null && driveFile != null -> driveFile.id
+                        localFile != null && driveFile == null -> {
+                            if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                                logger.log("폴더 업로드: ${localFile.name}", folder.accountEmail)
+                                val created = driveHelper.createFolder(localFile.name, driveFolderId)
+                                created?.id
+                            } else null
+                        }
+                        localFile == null && driveFile != null -> {
+                            if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                                logger.log("폴더 다운로드: ${driveFile.name}", folder.accountEmail)
+                                val dir = File(localPath, driveFile.name)
+                                if (!dir.exists()) dir.mkdirs()
+                                driveFile.id
+                            } else null
+                        }
+                        else -> null
+                    }
+
+                    if (subDriveFolderId != null) {
+                        val subLocalPath = File(localPath, name).absolutePath
+                        val subLocalItems = scanLocalFolder(subLocalPath)
+                        val subDriveItems = driveHelper.listAllFiles(subDriveFolderId)
+                        
+                        val subResult = syncDirectoryRecursive(folder, subLocalPath, subDriveFolderId, subLocalItems, subDriveItems)
+                        uploaded += subResult.uploaded
+                        downloaded += subResult.downloaded
+                        skipped += subResult.skipped
+                        errors += subResult.errors
+                        conflicts.addAll(subResult.conflicts)
+                    } else {
+                        skipped++
+                    }
+                }
+
+                // File syncing (Existing logic moved here)
+                localFile != null && driveFile == null -> {
+                    if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                        logger.log("업로드 시작: $name", folder.accountEmail)
+                        val result = driveHelper.uploadFile(localFile.absolutePath, name, driveFolderId)
+                        if (result != null) {
+                            uploaded++; logger.log("업로드 성공: $name", folder.accountEmail)
+                            trackSyncItem(folder, localFile, result.id, SyncStatus.SYNCED)
+                        } else {
+                            errors++; logger.log("업로드 실패: $name", folder.accountEmail)
+                        }
+                    } else skipped++
+                }
+
+                localFile == null && driveFile != null -> {
+                    if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                        logger.log("다운로드 시작: $name", folder.accountEmail)
+                        val destPath = File(localPath, name).absolutePath
+                        val success = driveHelper.downloadFile(driveFile.id, destPath)
+                        if (success) {
+                            downloaded++; logger.log("다운로드 성공: $name", folder.accountEmail)
+                            trackSyncItem(folder, File(destPath), driveFile.id, SyncStatus.SYNCED)
+                        } else {
+                            errors++; logger.log("다운로드 실패: $name", folder.accountEmail)
+                        }
+                    } else skipped++
+                }
+
+                localFile != null && driveFile != null -> {
+                    val localModified = localFile.lastModified()
+                    val driveModified = driveFile.modifiedTime
+                    val existingItem = syncItemDao.getSyncItemByLocalPath(localFile.absolutePath)
+                    val lastSyncedAt = existingItem?.lastSyncedAt ?: 0L
+                    
+                    val isLocalUpdated = localModified > lastSyncedAt
+                    val isDriveUpdated = driveModified > lastSyncedAt
+                    
+                    when {
+                        isLocalUpdated && isDriveUpdated -> {
+                            val conflict = SyncConflict(existingItem ?: createSyncItem(folder, localFile, driveFile.id), name, localModified, localFile.length(), driveFile.name, driveModified, driveFile.size)
+                            val defaultResolution = syncPreferences.defaultConflictResolution
+                            if (defaultResolution != null) {
+                                if (resolveConflict(conflict, defaultResolution)) {
+                                    if (defaultResolution == ConflictResolution.USE_LOCAL) uploaded++ else downloaded++
+                                } else errors++
+                            } else conflicts.add(conflict)
+                        }
+                        isLocalUpdated -> {
+                            if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                                val result = driveHelper.updateFile(existingItem?.driveFileId ?: driveFile.id, localFile.absolutePath)
+                                if (result != null) {
+                                    uploaded++; updateSyncItem(existingItem!!, localFile, driveFile.id, SyncStatus.SYNCED)
+                                } else errors++
+                            } else skipped++
+                        }
+                        isDriveUpdated -> {
+                            if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                                if (driveHelper.downloadFile(driveFile.id, localFile.absolutePath)) {
+                                    downloaded++; updateSyncItem(existingItem ?: createSyncItem(folder, localFile, driveFile.id), localFile, driveFile.id, SyncStatus.SYNCED)
+                                } else errors++
+                            } else skipped++
+                        }
+                        else -> skipped++
+                    }
+                }
+            }
+        }
+        return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts)
+    }
+
+    private data class RecursiveSyncResult(
+        val uploaded: Int,
+        val downloaded: Int,
+        val skipped: Int,
+        val errors: Int,
+        val conflicts: List<SyncConflict>
+    )
+
+    /**
+     * Scan local folder for files and directories
      */
     private fun scanLocalFolder(path: String): List<File> {
         val folder = File(path)
         if (!folder.exists() || !folder.isDirectory) {
             return emptyList()
         }
-        return folder.listFiles()?.filter { it.isFile } ?: emptyList()
+        return folder.listFiles()?.toList() ?: emptyList()
     }
     
     /**

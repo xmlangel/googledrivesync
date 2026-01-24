@@ -16,6 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import uk.xmlangel.googledrivesync.data.local.AccountPreferences
 import uk.xmlangel.googledrivesync.data.local.SyncFolderDao
+import uk.xmlangel.googledrivesync.data.local.SyncItemDao
+import uk.xmlangel.googledrivesync.data.local.SyncHistoryDao
 import uk.xmlangel.googledrivesync.data.model.GoogleAccount
 
 /**
@@ -23,7 +25,9 @@ import uk.xmlangel.googledrivesync.data.model.GoogleAccount
  */
 class AccountRepository(
     private val context: Context,
-    private val syncFolderDao: SyncFolderDao
+    private val syncFolderDao: SyncFolderDao,
+    private val syncItemDao: SyncItemDao,
+    private val syncHistoryDao: SyncHistoryDao
 ) {
     
     private val accountPrefs = AccountPreferences(context)
@@ -109,9 +113,14 @@ class AccountRepository(
     }
     
     /**
-     * Sign out from specific account
+     * Sign out from specific account and cleanup its data
      */
     suspend fun signOut(accountId: String) {
+        // Cleanup database records for this account
+        syncFolderDao.deleteFoldersByAccount(accountId)
+        syncItemDao.deleteItemsByAccount(accountId)
+        syncHistoryDao.deleteHistoryByAccount(accountId)
+        
         accountPrefs.removeAccount(accountId)
         loadAccounts()
     }

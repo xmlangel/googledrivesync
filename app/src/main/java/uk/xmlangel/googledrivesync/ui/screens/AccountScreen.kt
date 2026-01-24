@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,8 +43,10 @@ fun AccountScreen(
     val activeAccount by accountRepository.activeAccount.collectAsState()
     
     var showAddAccountDialog by remember { mutableStateOf(false) }
+    var accountToDelete by remember { mutableStateOf<GoogleAccount?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
+    val scope = rememberCoroutineScope()
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -117,6 +120,38 @@ fun AccountScreen(
                 }
             }
             
+            // Delete confirmation dialog
+            accountToDelete?.let { account ->
+                AlertDialog(
+                    onDismissRequest = { accountToDelete = null },
+                    title = { Text("계정 삭제") },
+                    text = { 
+                        Text("'${account.displayName}' 계정을 삭제하시겠습니까?\n\n" +
+                             "동기화 관련 설정 및 이력만 삭제되며, 기기나 Google Drive의 실제 파일은 삭제되지 않습니다.") 
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    accountRepository.signOut(account.id)
+                                    accountToDelete = null
+                                }
+                            },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("삭제")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { accountToDelete = null }) {
+                            Text("취소")
+                        }
+                    }
+                )
+            }
+            
             if (accounts.isEmpty()) {
                 // Empty state
                 Box(
@@ -159,6 +194,7 @@ fun AccountScreen(
                             account = account,
                             isActive = account.id == activeAccount?.id,
                             onSelect = { accountRepository.switchAccount(account.id) },
+                            onDelete = { accountToDelete = account },
                             onNavigateToFolders = onNavigateToFolders
                         )
                     }
@@ -173,6 +209,7 @@ fun AccountCard(
     account: GoogleAccount,
     isActive: Boolean,
     onSelect: () -> Unit,
+    onDelete: () -> Unit,
     onNavigateToFolders: () -> Unit
 ) {
     Card(
@@ -277,6 +314,14 @@ fun AccountCard(
                         Icons.Default.Folder,
                         contentDescription = "폴더 관리",
                         tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "계정 삭제",
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
                     )
                 }
             }

@@ -43,7 +43,14 @@ fun NavGraph(
     
     // Initialize dependencies
     val database = remember { SyncDatabase.getInstance(context) }
-    val accountRepository = remember { AccountRepository(context, database.syncFolderDao()) }
+    val accountRepository = remember { 
+        AccountRepository(
+            context, 
+            database.syncFolderDao(),
+            database.syncItemDao(),
+            database.syncHistoryDao()
+        ) 
+    }
     val driveHelper = remember { DriveServiceHelper(context) }
     val syncManager = remember { SyncManager(context) }
     val syncPreferences = remember { SyncPreferences(context) }

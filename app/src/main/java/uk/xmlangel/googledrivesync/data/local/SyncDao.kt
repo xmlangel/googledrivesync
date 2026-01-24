@@ -33,6 +33,9 @@ interface SyncFolderDao {
 
     @Query("SELECT MAX(lastSyncedAt) FROM sync_folders WHERE accountId = :accountId")
     suspend fun getMaxLastSyncTimeByAccount(accountId: String): Long?
+
+    @Query("DELETE FROM sync_folders WHERE accountId = :accountId")
+    suspend fun deleteFoldersByAccount(accountId: String)
 }
 
 @Dao
@@ -76,6 +79,9 @@ interface SyncItemDao {
     
     @Query("SELECT COUNT(*) FROM sync_items WHERE syncFolderId = :folderId AND status = :status")
     suspend fun countItemsByStatus(folderId: String, status: SyncStatus): Int
+
+    @Query("DELETE FROM sync_items WHERE accountId = :accountId")
+    suspend fun deleteItemsByAccount(accountId: String)
 }
 
 @Dao
@@ -100,4 +106,7 @@ interface SyncHistoryDao {
         skipped: Int,
         errors: Int
     )
+
+    @Query("DELETE FROM sync_history WHERE accountId = :accountId")
+    suspend fun deleteHistoryByAccount(accountId: String)
 }

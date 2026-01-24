@@ -20,6 +20,9 @@
 
 이 프로젝트를 빌드하려면 Google Cloud 프로젝트를 설정하고 필요한 자격 증명을 얻어야 합니다.
 
+> [!CAUTION]
+> **주의**: 현재 프로젝트의 패키지 이름(`uk.xmlangel.googledrivesync`)과 설정은 원본 개발 환경에 맞춰져 있습니다. 다른 환경에서 빌드하여 사용하시려면 본인의 Google Cloud 설정에 맞춰 **패키지 이름**을 변경하거나, 본인의 **SHA-1 지문**을 등록해야 합니다.
+
 ### 1. Google Cloud 설정
 
 1. [Google Cloud Console](https://console.cloud.google.com/)에 접속합니다.
@@ -46,6 +49,23 @@
 2. **Android Studio (Ladybug 이상)**에서 프로젝트를 엽니다.
 3. **JDK 17**이 설정되어 있는지 확인합니다.
 4. 앱을 빌드하고 실행합니다.
+
+### 4. APK 파일 생성 방법
+
+직접 APK 파일을 생성하려면 다음 중 하나의 방법을 사용하세요:
+
+#### 터미널(Gradle) 사용
+
+터미널에서 다음 명령어를 실행하면 `app/build/outputs/apk/debug/` 폴더에 APK 파일이 생성됩니다.
+
+```bash
+./gradlew assembleDebug
+```
+
+#### Android Studio UI 사용
+
+1. 상단 메뉴에서 `Build` > `Build Bundle(s) / APK(s)` > `Build APK(s)`를 선택합니다.
+2. 빌드가 완료되면 오른쪽 하단에 나타나는 알림에서 `locate` 링크를 클릭하여 생성된 파일을 확인합니다.
 
 ## 개발 스택
 

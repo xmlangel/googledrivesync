@@ -18,6 +18,9 @@ An Android application for bidirectional synchronization between local folders a
 
 To build this project, you need to set up a Google Cloud Project and obtain the necessary credentials.
 
+> [!CAUTION]
+> **IMPORTANT**: The current package name (`uk.xmlangel.googledrivesync`) and configurations are specific to the original development environment. To build and use this in your own environment, you must update the **package name** or register your own **SHA-1 fingerprint** in your Google Cloud Console project.
+
 ### 1. Google Cloud Setup
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
@@ -44,6 +47,23 @@ Look for the `SHA1` under the `debug` variant.
 2. Open the project in **Android Studio (Ladybug or newer)**.
 3. Ensure you have **JDK 17** configured.
 4. Build and run the app.
+
+### 4. How to Generate APK
+
+To manually generate an APK file, use one of the following methods:
+
+#### Using Terminal (Gradle)
+
+Run the following command to generate the APK file in the `app/build/outputs/apk/debug/` directory:
+
+```bash
+./gradlew assembleDebug
+```
+
+#### Using Android Studio UI
+
+1. Go to `Build` > `Build Bundle(s) / APK(s)` > `Build APK(s)` in the top menu.
+2. Once complete, click the `locate` link in the notification popup to find the generated file.
 
 ## Development Stack
 

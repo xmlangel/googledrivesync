@@ -176,45 +176,89 @@ class SyncManager(private val context: Context) {
                         }
                     }
                     
-                    // File exists in both → Check for conflicts
+                    // File exists in both → Check for updates or conflicts
                     localFile != null && driveFile != null -> {
                         val localModified = localFile.lastModified()
                         val driveModified = driveFile.modifiedTime
                         
-                        // Check if files are in sync
                         val existingItem = syncItemDao.getSyncItemByLocalPath(localFile.absolutePath)
-                        val isConflict = existingItem?.let {
-                            localModified > it.lastSyncedAt && driveModified > it.lastSyncedAt
-                        } ?: (localModified != driveModified)
+                        val lastSyncedAt = existingItem?.lastSyncedAt ?: 0L
                         
-                        if (isConflict) {
-                            val conflict = SyncConflict(
-                                syncItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
-                                localFileName = fileName,
-                                localModifiedAt = localModified,
-                                localSize = localFile.length(),
-                                driveFileName = driveFile.name,
-                                driveModifiedAt = driveModified,
-                                driveSize = driveFile.size
-                            )
-                            
-                            val defaultResolution = syncPreferences.defaultConflictResolution
-                            if (defaultResolution != null) {
-                                // Automatically resolve with default strategy
-                                val success = resolveConflict(conflict, defaultResolution)
-                                if (success) {
-                                    if (defaultResolution == ConflictResolution.USE_LOCAL) uploaded++
-                                    else if (defaultResolution == ConflictResolution.USE_DRIVE) downloaded++
-                                    else if (defaultResolution == ConflictResolution.KEEP_BOTH) downloaded++ // renamed local, then downloaded drive
+                        val isLocalUpdated = localModified > lastSyncedAt
+                        val isDriveUpdated = driveModified > lastSyncedAt
+                        
+                        when {
+                            // Case 1: Both updated → Conflict
+                            isLocalUpdated && isDriveUpdated -> {
+                                val conflict = SyncConflict(
+                                    syncItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                                    localFileName = fileName,
+                                    localModifiedAt = localModified,
+                                    localSize = localFile.length(),
+                                    driveFileName = driveFile.name,
+                                    driveModifiedAt = driveModified,
+                                    driveSize = driveFile.size
+                                )
+                                
+                                val defaultResolution = syncPreferences.defaultConflictResolution
+                                if (defaultResolution != null) {
+                                    val success = resolveConflict(conflict, defaultResolution)
+                                    if (success) {
+                                        if (defaultResolution == ConflictResolution.USE_LOCAL) uploaded++
+                                        else if (defaultResolution == ConflictResolution.USE_DRIVE) downloaded++
+                                        else if (defaultResolution == ConflictResolution.KEEP_BOTH) downloaded++
+                                    } else {
+                                        errors++
+                                    }
                                 } else {
-                                    errors++
+                                    conflicts.add(conflict)
                                 }
-                            } else {
-                                // Add to conflicts for user resolution
-                                conflicts.add(conflict)
                             }
-                        } else {
-                            skipped++
+                            
+                            // Case 2: Only Local updated → Upload
+                            isLocalUpdated -> {
+                                if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                                    logger.log("업데이트 업로드 시작: $fileName", folder.accountEmail)
+                                    val result = driveHelper.updateFile(
+                                        fileId = existingItem?.driveFileId ?: driveFile.id,
+                                        localPath = localFile.absolutePath
+                                    )
+                                    if (result != null) {
+                                        uploaded++
+                                        logger.log("업데이트 업로드 성공: $fileName", folder.accountEmail)
+                                        updateSyncItem(existingItem!!, localFile, driveFile.id, SyncStatus.SYNCED)
+                                    } else {
+                                        errors++
+                                        logger.log("업데이트 업로드 실패: $fileName", folder.accountEmail)
+                                    }
+                                } else {
+                                    skipped++
+                                }
+                            }
+                            
+                            // Case 3: Only Drive updated → Download
+                            isDriveUpdated -> {
+                                if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                                    logger.log("업데이트 다운로드 시작: $fileName", folder.accountEmail)
+                                    val destPath = localFile.absolutePath
+                                    val success = driveHelper.downloadFile(driveFile.id, destPath)
+                                    if (success) {
+                                        downloaded++
+                                        logger.log("업데이트 다운로드 성공: $fileName", folder.accountEmail)
+                                        updateSyncItem(existingItem ?: createSyncItem(folder, localFile, driveFile.id), localFile, driveFile.id, SyncStatus.SYNCED)
+                                    } else {
+                                        errors++
+                                        logger.log("업데이트 다운로드 실패: $fileName", folder.accountEmail)
+                                    }
+                                } else {
+                                    skipped++
+                                }
+                            }
+                            
+                            // Case 4: None updated → Skip
+                            else -> {
+                                skipped++
+                            }
                         }
                     }
                 }
@@ -316,6 +360,28 @@ class SyncManager(private val context: Context) {
             return emptyList()
         }
         return folder.listFiles()?.filter { it.isFile } ?: emptyList()
+    }
+    
+    /**
+     * Update existing sync item in database
+     */
+    private suspend fun updateSyncItem(
+        existingItem: SyncItemEntity,
+        localFile: File,
+        driveFileId: String?,
+        status: SyncStatus
+    ) {
+        val updatedItem = existingItem.copy(
+            driveFileId = driveFileId ?: existingItem.driveFileId,
+            mimeType = getMimeType(localFile.name),
+            localModifiedAt = localFile.lastModified(),
+            driveModifiedAt = System.currentTimeMillis(),
+            localSize = localFile.length(),
+            driveSize = localFile.length(),
+            status = status,
+            lastSyncedAt = System.currentTimeMillis()
+        )
+        syncItemDao.updateSyncItem(updatedItem)
     }
     
     /**

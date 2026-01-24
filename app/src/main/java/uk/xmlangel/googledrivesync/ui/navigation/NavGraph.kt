@@ -49,7 +49,7 @@ fun NavGraph(
     // Initialize Drive service when account is available
     LaunchedEffect(activeAccount) {
         if (activeAccount != null) {
-            driveHelper.initializeDriveService(activeAccount?.id)
+            driveHelper.initializeDriveService(activeAccount?.email)
         }
     }
     
@@ -114,6 +114,7 @@ fun NavGraph(
                         CoroutineScope(Dispatchers.Main).launch {
                             syncManager.addSyncFolder(
                                 accountId = account.id,
+                                accountEmail = account.email,
                                 localPath = localPath,
                                 driveFolderId = driveFolderId,
                                 driveFolderName = driveFolderName,

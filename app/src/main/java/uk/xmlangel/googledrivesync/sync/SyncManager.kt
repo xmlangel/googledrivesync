@@ -45,6 +45,7 @@ class SyncManager(private val context: Context) {
      */
     suspend fun addSyncFolder(
         accountId: String,
+        accountEmail: String,
         localPath: String,
         driveFolderId: String,
         driveFolderName: String,
@@ -53,6 +54,7 @@ class SyncManager(private val context: Context) {
         val folder = SyncFolderEntity(
             id = UUID.randomUUID().toString(),
             accountId = accountId,
+            accountEmail = accountEmail,
             localPath = localPath,
             driveFolderId = driveFolderId,
             driveFolderName = driveFolderName,
@@ -77,7 +79,7 @@ class SyncManager(private val context: Context) {
                 ?: return SyncResult.Error("동기화 폴더를 찾을 수 없습니다")
             
             // Initialize Drive service for this specific account
-            if (!driveHelper.initializeDriveService(folder.accountId)) {
+            if (!driveHelper.initializeDriveService(folder.accountEmail)) {
                 return SyncResult.Error("계정 동기화 서비스를 초기화할 수 없습니다")
             }
             
@@ -86,6 +88,7 @@ class SyncManager(private val context: Context) {
                 SyncHistoryEntity(
                     syncFolderId = folderId,
                     accountId = folder.accountId,
+                    accountEmail = folder.accountEmail,
                     startedAt = System.currentTimeMillis()
                 )
             )
@@ -328,6 +331,7 @@ class SyncManager(private val context: Context) {
             id = UUID.randomUUID().toString(),
             syncFolderId = folder.id,
             accountId = folder.accountId,
+            accountEmail = folder.accountEmail,
             localPath = localFile.absolutePath,
             driveFileId = driveFileId,
             fileName = localFile.name,
@@ -351,6 +355,7 @@ class SyncManager(private val context: Context) {
             id = UUID.randomUUID().toString(),
             syncFolderId = folder.id,
             accountId = folder.accountId,
+            accountEmail = folder.accountEmail,
             localPath = localFile.absolutePath,
             driveFileId = driveFileId,
             fileName = localFile.name,

@@ -13,6 +13,7 @@ data class SyncFolderEntity(
     @PrimaryKey
     val id: String,
     val accountId: String,
+    val accountEmail: String,
     val localPath: String,
     val driveFolderId: String,
     val driveFolderName: String,
@@ -31,6 +32,7 @@ data class SyncItemEntity(
     val id: String,
     val syncFolderId: String,
     val accountId: String,
+    val accountEmail: String,
     val localPath: String,
     val driveFileId: String?,
     val fileName: String,
@@ -53,6 +55,7 @@ data class SyncHistoryEntity(
     val id: Long = 0,
     val syncFolderId: String,
     val accountId: String,
+    val accountEmail: String,
     val startedAt: Long,
     val completedAt: Long? = null,
     val filesUploaded: Int = 0,

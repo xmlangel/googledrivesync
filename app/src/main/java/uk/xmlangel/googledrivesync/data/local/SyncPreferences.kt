@@ -3,6 +3,7 @@ package uk.xmlangel.googledrivesync.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import uk.xmlangel.googledrivesync.sync.ConflictResolution
 
 /**
  * Preferences for sync settings
@@ -20,6 +21,7 @@ class SyncPreferences(context: Context) {
         private const val KEY_SYNC_WHILE_CHARGING = "sync_while_charging"
         private const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
+        private const val KEY_DEFAULT_CONFLICT_RESOLUTION = "default_conflict_resolution"
         
         const val DEFAULT_SYNC_INTERVAL = 30 // minutes
     }
@@ -58,6 +60,21 @@ class SyncPreferences(context: Context) {
     var notificationsEnabled: Boolean
         get() = prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_NOTIFICATIONS_ENABLED, value) }
+    
+    /**
+     * Get default conflict resolution strategy
+     * Returns null if "Always Ask" is selected
+     */
+    var defaultConflictResolution: ConflictResolution?
+        get() {
+            val name = prefs.getString(KEY_DEFAULT_CONFLICT_RESOLUTION, null)
+            return try {
+                name?.let { ConflictResolution.valueOf(it) }
+            } catch (e: Exception) {
+                null
+            }
+        }
+        set(value) = prefs.edit { putString(KEY_DEFAULT_CONFLICT_RESOLUTION, value?.name) }
     
     /**
      * Available sync interval options (in minutes)

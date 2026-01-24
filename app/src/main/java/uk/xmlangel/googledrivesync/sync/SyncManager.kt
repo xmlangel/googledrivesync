@@ -21,6 +21,7 @@ class SyncManager(private val context: Context) {
     private val syncFolderDao = database.syncFolderDao()
     private val syncItemDao = database.syncItemDao()
     private val historyDao = database.syncHistoryDao()
+    private val syncPreferences = SyncPreferences(context)
     
     private val _syncProgress = MutableStateFlow<SyncProgress?>(null)
     val syncProgress: StateFlow<SyncProgress?> = _syncProgress.asStateFlow()
@@ -168,18 +169,31 @@ class SyncManager(private val context: Context) {
                         } ?: (localModified != driveModified)
                         
                         if (isConflict) {
-                            // Add to conflicts for user resolution
-                            conflicts.add(
-                                SyncConflict(
-                                    syncItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
-                                    localFileName = fileName,
-                                    localModifiedAt = localModified,
-                                    localSize = localFile.length(),
-                                    driveFileName = driveFile.name,
-                                    driveModifiedAt = driveModified,
-                                    driveSize = driveFile.size
-                                )
+                            val conflict = SyncConflict(
+                                syncItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                                localFileName = fileName,
+                                localModifiedAt = localModified,
+                                localSize = localFile.length(),
+                                driveFileName = driveFile.name,
+                                driveModifiedAt = driveModified,
+                                driveSize = driveFile.size
                             )
+                            
+                            val defaultResolution = syncPreferences.defaultConflictResolution
+                            if (defaultResolution != null) {
+                                // Automatically resolve with default strategy
+                                val success = resolveConflict(conflict, defaultResolution)
+                                if (success) {
+                                    if (defaultResolution == ConflictResolution.USE_LOCAL) uploaded++
+                                    else if (defaultResolution == ConflictResolution.USE_DRIVE) downloaded++
+                                    else if (defaultResolution == ConflictResolution.KEEP_BOTH) downloaded++ // renamed local, then downloaded drive
+                                } else {
+                                    errors++
+                                }
+                            } else {
+                                // Add to conflicts for user resolution
+                                conflicts.add(conflict)
+                            }
                         } else {
                             skipped++
                         }

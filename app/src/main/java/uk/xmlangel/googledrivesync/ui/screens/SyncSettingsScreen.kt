@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import uk.xmlangel.googledrivesync.data.local.SyncPreferences
+import uk.xmlangel.googledrivesync.sync.ConflictResolution
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,8 +26,10 @@ fun SyncSettingsScreen(
     var whileCharging by remember { mutableStateOf(syncPreferences.syncWhileCharging) }
     var autoSync by remember { mutableStateOf(syncPreferences.autoSyncEnabled) }
     var notifications by remember { mutableStateOf(syncPreferences.notificationsEnabled) }
+    var defaultConflictResolution by remember { mutableStateOf(syncPreferences.defaultConflictResolution) }
     
     var showIntervalDialog by remember { mutableStateOf(false) }
+    var showConflictResolutionDialog by remember { mutableStateOf(false) }
     
     Scaffold(
         topBar = {
@@ -113,6 +116,22 @@ fun SyncSettingsScreen(
                     }
                 )
             }
+            
+            // Conflict Resolution Section
+            SettingsSection(title = "충돌 해결") {
+                SettingsClickItem(
+                    icon = Icons.Default.Warning,
+                    title = "기본 충돌 해결 전략",
+                    subtitle = when (defaultConflictResolution) {
+                        ConflictResolution.USE_LOCAL -> "로컬 사용"
+                        ConflictResolution.USE_DRIVE -> "Drive 사용"
+                        ConflictResolution.KEEP_BOTH -> "둘 다 유지"
+                        ConflictResolution.SKIP -> "건너뛰기"
+                        null -> "매번 확인"
+                    },
+                    onClick = { showConflictResolutionDialog = true }
+                )
+            }
         }
     }
     
@@ -147,6 +166,49 @@ fun SyncSettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showIntervalDialog = false }) {
+                    Text("취소")
+                }
+            }
+        )
+    }
+    
+    // Conflict Resolution Selection Dialog
+    if (showConflictResolutionDialog) {
+        AlertDialog(
+            onDismissRequest = { showConflictResolutionDialog = false },
+            title = { Text("기본 충돌 해결 전략 선택") },
+            text = {
+                Column {
+                    val options = listOf(
+                        null to "매번 확인",
+                        ConflictResolution.USE_LOCAL to "로컬 사용",
+                        ConflictResolution.USE_DRIVE to "Drive 사용",
+                        ConflictResolution.KEEP_BOTH to "둘 다 유지"
+                    )
+                    
+                    options.forEach { (option, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = defaultConflictResolution == option,
+                                onClick = {
+                                    defaultConflictResolution = option
+                                    syncPreferences.defaultConflictResolution = option
+                                    showConflictResolutionDialog = false
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showConflictResolutionDialog = false }) {
                     Text("취소")
                 }
             }

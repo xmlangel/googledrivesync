@@ -23,7 +23,7 @@ class SyncPreferences(context: Context) {
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
         private const val KEY_DEFAULT_CONFLICT_RESOLUTION = "default_conflict_resolution"
         
-        const val DEFAULT_SYNC_INTERVAL = 30 // minutes
+        const val DEFAULT_SYNC_INTERVAL = 60 // minutes
     }
     
     /**
@@ -80,7 +80,7 @@ class SyncPreferences(context: Context) {
      * Available sync interval options (in minutes)
      */
     val availableIntervals = listOf(
-        5, 10, 15, 30, 60, 120, 360, 720, 1440
+        15, 30, 60, 120, 360, 720, 1440
     )
     
     /**

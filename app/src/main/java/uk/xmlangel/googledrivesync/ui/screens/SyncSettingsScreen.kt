@@ -73,7 +73,37 @@ fun SyncSettingsScreen(
                         subtitle = syncPreferences.formatInterval(syncInterval),
                         onClick = { showIntervalDialog = true }
                     )
+                    
+                    Text(
+                        text = "* Android 시스템 제한으로 인해 백그라운드 동기화는 최소 15분 주기로 동작하며, 시스템 상황에 따라 지연될 수 있습니다.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
                 }
+            }
+            
+            // System Section
+            SettingsSection(title = "시스템 설정") {
+                SettingsClickItem(
+                    icon = Icons.Default.BatteryChargingFull,
+                    title = "배터리 최적화 예외 설정",
+                    subtitle = "더 안정적인 백그라운드 동기화를 위해 필요합니다",
+                    onClick = {
+                        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        } else {
+                            null
+                        }
+                        intent?.let { context.startActivity(it) }
+                    }
+                )
+                Text(
+                    text = "* 동기화가 자주 끊긴다면 배터리 최적화를 '제한 없음'으로 설정해주세요.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
             }
             
             // Network Section
@@ -108,13 +138,27 @@ fun SyncSettingsScreen(
                 SettingsSwitchItem(
                     icon = Icons.Default.Notifications,
                     title = "동기화 알림",
-                    subtitle = "동기화 완료 시 알림 표시",
+                    subtitle = "동기화 완료 및 오류 발생 시 알림 표시",
                     checked = notifications,
                     onCheckedChange = {
                         notifications = it
                         syncPreferences.notificationsEnabled = it
                     }
                 )
+                
+                if (notifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    SettingsClickItem(
+                        icon = Icons.Default.NotificationsActive,
+                        title = "알림 권한 설정",
+                        subtitle = "시스템에서 알림 권한을 허용해야 합니다",
+                        onClick = {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
+                }
             }
             
             // Conflict Resolution Section

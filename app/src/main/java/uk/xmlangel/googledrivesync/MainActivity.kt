@@ -97,5 +97,15 @@ class MainActivity : ComponentActivity() {
                 startActivity(intent)
             }
         }
+        
+        // Request Battery Optimization Exemption for Android 6+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                // We don't force it but we could show a dialog or just log
+                // For now, let's just log and let user handle it in settings
+                uk.xmlangel.googledrivesync.util.SyncLogger(this).log("배터리 최적화가 활성화되어 있습니다. 백그라운드 동기화가 지연될 수 있습니다.")
+            }
+        }
     }
 }

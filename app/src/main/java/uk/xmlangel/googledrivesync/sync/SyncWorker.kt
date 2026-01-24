@@ -27,6 +27,9 @@ class SyncWorker(
     
     override suspend fun doWork(): Result {
         // Show notification
+        val logger = uk.xmlangel.googledrivesync.util.SyncLogger(applicationContext)
+        logger.log("백그라운드 동기화 작업 시작 (WorkManager)")
+        
         setForeground(createForegroundInfo())
         
         // Get all enabled sync folders
@@ -56,8 +59,12 @@ class SyncWorker(
         }
         
         // Show completion notification
-        if (prefs.notificationsEnabled && (totalUploaded > 0 || totalDownloaded > 0)) {
-            showCompletionNotification(totalUploaded, totalDownloaded)
+        if (prefs.notificationsEnabled) {
+            if (hasErrors) {
+                showErrorNotification()
+            } else if (totalUploaded > 0 || totalDownloaded > 0) {
+                showCompletionNotification(totalUploaded, totalDownloaded)
+            }
         }
         
         return if (hasErrors) Result.retry() else Result.success()
@@ -105,11 +112,27 @@ class SyncWorker(
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("동기화 완료")
             .setContentText("업로드: ${uploaded}개, 다운로드: ${downloaded}개")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
         
         notificationManager.notify(COMPLETE_NOTIFICATION_ID, notification)
+    }
+    
+    private fun showErrorNotification() {
+        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) 
+            as NotificationManager
+        
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setContentTitle("동기화 오류")
+            .setContentText("동기화 중 오류가 발생했습니다. 로그를 확인해 주세요.")
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        
+        notificationManager.notify(ERROR_NOTIFICATION_ID, notification)
     }
     
     private fun createNotificationChannel() {
@@ -117,9 +140,11 @@ class SyncWorker(
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "동기화",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Google Drive 동기화 알림"
+                description = "Google Drive 동기화 상태 및 결과 알림"
+                enableLights(true)
+                enableVibration(true)
             }
             
             val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) 
@@ -133,6 +158,7 @@ class SyncWorker(
         const val NOTIFICATION_ID = 1001
         const val CONFLICT_NOTIFICATION_ID = 1002
         const val COMPLETE_NOTIFICATION_ID = 1003
+        const val ERROR_NOTIFICATION_ID = 1004
         const val WORK_NAME = "periodic_sync"
         
         /**
@@ -172,7 +198,7 @@ class SyncWorker(
             
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE,
+                ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
                 syncRequest
             )
         }

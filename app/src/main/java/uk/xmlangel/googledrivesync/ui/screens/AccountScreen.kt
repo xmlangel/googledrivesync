@@ -23,6 +23,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.*
 import coil.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
@@ -247,6 +249,26 @@ fun AccountCard(
                         )
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Sync,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (account.lastSyncedAt != null && account.lastSyncedAt > 0) {
+                            "최근 동기화: ${formatTimestamp(account.lastSyncedAt)}"
+                        } else {
+                            "동기화 내역 없음"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
             }
             
             if (isActive) {
@@ -258,6 +280,28 @@ fun AccountCard(
                     )
                 }
             }
+        }
+    }
+}
+
+private fun formatTimestamp(timestamp: Long): String {
+    val date = Date(timestamp)
+    val now = Calendar.getInstance()
+    val syncDate = Calendar.getInstance().apply { time = date }
+    
+    return when {
+        // Today: HH:mm
+        now.get(Calendar.YEAR) == syncDate.get(Calendar.YEAR) &&
+        now.get(Calendar.DAY_OF_YEAR) == syncDate.get(Calendar.DAY_OF_YEAR) -> {
+            SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)
+        }
+        // This year: MM월 dd일 HH:mm
+        now.get(Calendar.YEAR) == syncDate.get(Calendar.YEAR) -> {
+            SimpleDateFormat("MM월 dd일 HH:mm", Locale.getDefault()).format(date)
+        }
+        // Longer ago: yyyy-MM-dd
+        else -> {
+            SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(date)
         }
     }
 }

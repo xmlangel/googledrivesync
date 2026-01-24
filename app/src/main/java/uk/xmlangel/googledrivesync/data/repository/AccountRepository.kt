@@ -11,15 +11,23 @@ import com.google.api.services.drive.DriveScopes
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import uk.xmlangel.googledrivesync.data.local.AccountPreferences
+import uk.xmlangel.googledrivesync.data.local.SyncFolderDao
 import uk.xmlangel.googledrivesync.data.model.GoogleAccount
 
 /**
  * Repository for managing Google account authentication and multi-account support
  */
-class AccountRepository(private val context: Context) {
+class AccountRepository(
+    private val context: Context,
+    private val syncFolderDao: SyncFolderDao
+) {
     
     private val accountPrefs = AccountPreferences(context)
+    private val scope = CoroutineScope(Dispatchers.IO)
     
     private val _accounts = MutableStateFlow<List<GoogleAccount>>(emptyList())
     val accounts: StateFlow<List<GoogleAccount>> = _accounts.asStateFlow()
@@ -35,10 +43,17 @@ class AccountRepository(private val context: Context) {
         val savedAccounts = accountPrefs.getAccounts()
         val activeId = accountPrefs.getActiveAccountId()
         
-        _accounts.value = savedAccounts.map { account ->
-            account.copy(isActive = account.id == activeId)
+        scope.launch {
+            val accountsWithSyncTime = savedAccounts.map { account ->
+                val lastSyncedAt = syncFolderDao.getMaxLastSyncTimeByAccount(account.id)
+                account.copy(
+                    isActive = account.id == activeId,
+                    lastSyncedAt = lastSyncedAt
+                )
+            }
+            _accounts.value = accountsWithSyncTime
+            _activeAccount.value = accountsWithSyncTime.find { it.id == activeId }
         }
-        _activeAccount.value = savedAccounts.find { it.id == activeId }
     }
     
     /**

@@ -8,6 +8,7 @@ data class GoogleAccount(
     val email: String,
     val displayName: String?,
     val photoUrl: String?,
+    val lastSyncedAt: Long? = null,
     val isActive: Boolean = false
 )
 

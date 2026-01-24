@@ -23,16 +23,20 @@ class DriveServiceHelper(private val context: Context) {
     private var driveService: Drive? = null
     
     /**
-     * Initialize Drive service with current signed-in account
+     * Initialize Drive service with a specific account or current signed-in account
      */
-    fun initializeDriveService(): Boolean {
-        val account = GoogleSignIn.getLastSignedInAccount(context) ?: return false
+    fun initializeDriveService(accountEmail: String? = null): Boolean {
+        val account = if (accountEmail != null) {
+            android.accounts.Account(accountEmail, "com.google")
+        } else {
+            GoogleSignIn.getLastSignedInAccount(context)?.account
+        } ?: return false
         
         val credential = GoogleAccountCredential.usingOAuth2(
             context,
             listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE)
         )
-        credential.selectedAccount = account.account
+        credential.selectedAccount = account
         
         driveService = Drive.Builder(
             NetHttpTransport(),

@@ -49,8 +49,7 @@ fun NavGraph(
     // Initialize Drive service when account is available
     LaunchedEffect(activeAccount) {
         if (activeAccount != null) {
-            driveHelper.initializeDriveService()
-            syncManager.initialize()
+            driveHelper.initializeDriveService(activeAccount?.id)
         }
     }
     

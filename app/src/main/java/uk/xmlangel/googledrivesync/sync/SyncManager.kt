@@ -76,6 +76,11 @@ class SyncManager(private val context: Context) {
             val folder = syncFolderDao.getSyncFolderById(folderId)
                 ?: return SyncResult.Error("동기화 폴더를 찾을 수 없습니다")
             
+            // Initialize Drive service for this specific account
+            if (!driveHelper.initializeDriveService(folder.accountId)) {
+                return SyncResult.Error("계정 동기화 서비스를 초기화할 수 없습니다")
+            }
+            
             // Start history entry
             val historyId = historyDao.insertHistory(
                 SyncHistoryEntity(

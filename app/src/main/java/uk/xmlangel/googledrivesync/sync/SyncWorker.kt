@@ -26,11 +26,6 @@ class SyncWorker(
     private val prefs = SyncPreferences(context)
     
     override suspend fun doWork(): Result {
-        // Initialize Drive service
-        if (!syncManager.initialize()) {
-            return Result.retry()
-        }
-        
         // Show notification
         setForeground(createForegroundInfo())
         

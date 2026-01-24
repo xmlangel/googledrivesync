@@ -68,7 +68,10 @@ fun AccountScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { 
-                    signInLauncher.launch(accountRepository.getSignInIntent())
+                    // Force sign out from Google Play Services to show account picker
+                    accountRepository.getGoogleSignInClient().signOut().addOnCompleteListener {
+                        signInLauncher.launch(accountRepository.getSignInIntent())
+                    }
                 },
                 icon = { Icon(Icons.Default.Add, "계정 추가") },
                 text = { Text("계정 추가") }

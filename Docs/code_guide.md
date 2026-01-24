@@ -130,7 +130,7 @@ Jetpack Compose를 사용한 사용자 인터페이스 구성입니다.
 
 ---
 
-## 5. 결론 및 유지보수 팁
+## 5. 유지보수 팁
 
 - 새로운 파일 형식을 지원하려면 `SyncManager.getMimeType`에 MIME 매핑을 추가하십시오.
 - UI 화면을 추가하려면 `Screen` 실드 클래스에 경로를 정의하고 `NavGraph`에 `composable` 블록을 구성하십시오.

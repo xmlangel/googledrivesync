@@ -23,6 +23,7 @@ sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
     object FolderBrowser : Screen("folder_browser")
     object Settings : Screen("settings")
+    object SyncLogs : Screen("sync_logs")
     object LocalFolderPicker : Screen("local_folder_picker/{driveFolderId}/{driveFolderName}") {
         fun createRoute(driveFolderId: String, driveFolderName: String) = 
             "local_folder_picker/$driveFolderId/$driveFolderName"
@@ -80,6 +81,9 @@ fun NavGraph(
                     },
                     onNavigateToAccounts = {
                         navController.navigate(Screen.Account.route)
+                    },
+                    onNavigateToLogs = {
+                        navController.navigate(Screen.SyncLogs.route)
                     }
                 )
             }
@@ -134,6 +138,14 @@ fun NavGraph(
                 },
                 onScheduleSync = {
                     SyncWorker.schedule(context)
+                }
+            )
+        }
+
+        composable(Screen.SyncLogs.route) {
+            SyncLogScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

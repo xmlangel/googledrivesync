@@ -1,0 +1,82 @@
+package uk.xmlangel.googledrivesync.util
+
+import android.content.Context
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
+
+/**
+ * Utility for logging synchronization events to a file with size management
+ */
+class SyncLogger(private val context: Context) {
+    
+    private val logFile = File(context.cacheDir, LOG_FILE_NAME)
+    private val oldLogFile = File(context.cacheDir, "$LOG_FILE_NAME.old")
+    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+    /**
+     * Log a message with current timestamp
+     */
+    fun log(message: String) {
+        try {
+            checkRotation()
+            val timestamp = dateFormat.format(Date())
+            val logEntry = "[$timestamp] $message\n"
+            
+            FileOutputStream(logFile, true).use { output ->
+                output.write(logEntry.toByteArray())
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Read all logs from current and old log files
+     */
+    fun readLogs(): List<String> {
+        val logs = mutableListOf<String>()
+        
+        // Read current logs
+        if (logFile.exists()) {
+            logs.addAll(logFile.readLines())
+        }
+        
+        // Optionally read old logs if needed, but for UI simplicity, usually current is enough
+        // or we can prepend old logs
+        /*
+        if (oldLogFile.exists()) {
+            val oldLogs = oldLogFile.readLines()
+            logs.addAll(0, oldLogs)
+        }
+        */
+        
+        return logs.reversed() // Newest first
+    }
+
+    /**
+     * Clear all log files
+     */
+    fun clearLogs() {
+        if (logFile.exists()) logFile.delete()
+        if (oldLogFile.exists()) oldLogFile.delete()
+    }
+
+    /**
+     * Check if log file exceeds MAX_SIZE and rotate if necessary
+     */
+    private fun checkRotation() {
+        if (logFile.exists() && logFile.length() > MAX_SIZE) {
+            if (oldLogFile.exists()) {
+                oldLogFile.delete()
+            }
+            logFile.renameTo(oldLogFile)
+        }
+    }
+
+    companion object {
+        private const val LOG_FILE_NAME = "sync.log"
+        private const val MAX_SIZE = 10 * 1024 * 1024 // 10MB
+    }
+}

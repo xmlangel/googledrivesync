@@ -30,7 +30,8 @@ fun DashboardScreen(
     accountId: String,
     onNavigateToSettings: () -> Unit,
     onNavigateToFolderBrowser: () -> Unit,
-    onNavigateToAccounts: () -> Unit
+    onNavigateToAccounts: () -> Unit,
+    onNavigateToLogs: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     
@@ -72,6 +73,9 @@ fun DashboardScreen(
                     }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, "설정")
+                    }
+                    IconButton(onClick = onNavigateToLogs) {
+                        Icon(Icons.Default.List, "로그")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

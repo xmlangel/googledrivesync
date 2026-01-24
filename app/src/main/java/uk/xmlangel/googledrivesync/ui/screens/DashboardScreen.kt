@@ -1,5 +1,6 @@
 package uk.xmlangel.googledrivesync.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,7 +32,8 @@ fun DashboardScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToFolderBrowser: () -> Unit,
     onNavigateToAccounts: () -> Unit,
-    onNavigateToLogs: () -> Unit
+    onNavigateToLogs: () -> Unit,
+    onNavigateToSyncedFolder: (folderId: String, folderName: String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     
@@ -223,6 +225,9 @@ fun DashboardScreen(
                                 scope.launch {
                                     database.syncFolderDao().deleteSyncFolder(folder)
                                 }
+                            },
+                            onClick = {
+                                onNavigateToSyncedFolder(folder.id, folder.driveFolderName)
                             }
                         )
                     }
@@ -250,12 +255,15 @@ fun DashboardScreen(
 fun SyncFolderCard(
     folder: SyncFolderEntity,
     onToggleEnabled: (Boolean) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onClick: () -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

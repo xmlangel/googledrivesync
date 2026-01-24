@@ -24,6 +24,10 @@ sealed class Screen(val route: String) {
     object FolderBrowser : Screen("folder_browser")
     object Settings : Screen("settings")
     object SyncLogs : Screen("sync_logs")
+    object SyncedFolderFile : Screen("synced_folder_files/{folderId}/{folderName}") {
+        fun createRoute(folderId: String, folderName: String) = 
+            "synced_folder_files/$folderId/$folderName"
+    }
     object LocalFolderPicker : Screen("local_folder_picker/{driveFolderId}/{driveFolderName}") {
         fun createRoute(driveFolderId: String, driveFolderName: String) = 
             "local_folder_picker/$driveFolderId/$driveFolderName"
@@ -83,6 +87,9 @@ fun NavGraph(
                     },
                     onNavigateToLogs = {
                         navController.navigate(Screen.SyncLogs.route)
+                    },
+                    onNavigateToSyncedFolder = { folderId, folderName ->
+                        navController.navigate(Screen.SyncedFolderFile.createRoute(folderId, folderName))
                     }
                 )
             }
@@ -144,6 +151,20 @@ fun NavGraph(
 
         composable(Screen.SyncLogs.route) {
             SyncLogScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Screen.SyncedFolderFile.route) { backStackEntry ->
+            val folderId = backStackEntry.arguments?.getString("folderId") ?: ""
+            val folderName = backStackEntry.arguments?.getString("folderName") ?: ""
+            
+            SyncedFolderFileScreen(
+                database = database,
+                folderId = folderId,
+                folderName = folderName,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

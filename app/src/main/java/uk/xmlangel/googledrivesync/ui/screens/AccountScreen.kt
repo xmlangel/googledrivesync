@@ -36,7 +36,9 @@ import uk.xmlangel.googledrivesync.data.repository.AccountRepository
 @Composable
 fun AccountScreen(
     accountRepository: AccountRepository,
-    onNavigateToFolders: () -> Unit
+    onNavigateToFolders: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onNavigateToLogs: () -> Unit
 ) {
     val context = LocalContext.current
     val accounts by accountRepository.accounts.collectAsState()
@@ -64,7 +66,18 @@ fun AccountScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("계정 관리") },
+                title = { Text("Google Drive Sync") },
+                actions = {
+                    IconButton(onClick = { /* Already on Account screen */ }) {
+                        Icon(Icons.Default.AccountCircle, "계정")
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, "설정")
+                    }
+                    IconButton(onClick = onNavigateToLogs) {
+                        Icon(Icons.Default.List, "로그")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )

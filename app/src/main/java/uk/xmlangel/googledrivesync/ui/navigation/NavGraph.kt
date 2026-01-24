@@ -73,6 +73,12 @@ fun NavGraph(
                 accountRepository = accountRepository,
                 onNavigateToFolders = {
                     navController.navigate(Screen.Dashboard.route)
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToLogs = {
+                    navController.navigate(Screen.SyncLogs.route)
                 }
             )
         }

@@ -40,8 +40,12 @@ class MainActivity : ComponentActivity() {
         // Schedule background sync
         SyncWorker.schedule(this)
         
+        var initialRoute by mutableStateOf<String?>(null)
+        
         // Handle intent if started from notification
-        handleIntent(intent)
+        handleIntent(intent) { route ->
+            initialRoute = route
+        }
         
         setContent {
             GoogledrivesyncTheme {
@@ -49,7 +53,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavGraph()
+                    NavGraph(initialRoute = initialRoute)
                 }
             }
         }
@@ -115,12 +119,14 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIntent(intent)
     }
     
-    private fun handleIntent(intent: Intent?) {
+    private fun handleIntent(intent: Intent?, onNavigate: (String) -> Unit) {
         intent?.let {
             uk.xmlangel.googledrivesync.util.SyncLogger(this).log("앱이 인텐트로 실행되었습니다: ${it.action}")
+            if (it.action == SyncWorker.ACTION_SHOW_LOGS) {
+                onNavigate(uk.xmlangel.googledrivesync.ui.navigation.Screen.SyncLogs.route)
+            }
         }
     }
 }

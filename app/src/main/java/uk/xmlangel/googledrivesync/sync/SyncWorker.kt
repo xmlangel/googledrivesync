@@ -41,6 +41,7 @@ class SyncWorker(
         var hasErrors = false
         var totalUploaded = 0
         var totalDownloaded = 0
+        var totalConflicts = 0
         
         for (folder in folders) {
             when (val result = syncManager.syncFolder(folder.id)) {
@@ -49,8 +50,7 @@ class SyncWorker(
                     totalDownloaded += result.downloaded
                 }
                 is SyncResult.Conflict -> {
-                    // Conflicts need user resolution - don't count as error
-                    showConflictNotification(result.conflicts.size)
+                    totalConflicts += result.conflicts.size
                 }
                 is SyncResult.Error -> {
                     hasErrors = true
@@ -63,11 +63,7 @@ class SyncWorker(
         
         // Show completion notification
         if (prefs.notificationsEnabled) {
-            if (hasErrors) {
-                showErrorNotification()
-            } else if (totalUploaded > 0 || totalDownloaded > 0) {
-                showCompletionNotification(totalUploaded, totalDownloaded)
-            }
+            showFinalNotification(totalUploaded, totalDownloaded, totalConflicts, hasErrors)
         }
         
         return if (hasErrors) Result.retry() else Result.success()
@@ -78,9 +74,10 @@ class SyncWorker(
         
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("동기화 중...")
-            .setContentText("Google Drive와 동기화하고 있습니다")
+            .setContentText("Google Drive와 데이터를 대조하고 있습니다")
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW) // Use LOW priority for steady progress
             .setContentIntent(createPendingIntent())
             .build()
         
@@ -95,51 +92,41 @@ class SyncWorker(
         return ForegroundInfo(NOTIFICATION_ID, notification)
     }
     
-    private fun showConflictNotification(count: Int) {
+    private fun showFinalNotification(uploaded: Int, downloaded: Int, conflicts: Int, hasErrors: Boolean) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) 
             as NotificationManager
         
+        val title = when {
+            hasErrors -> "동기화 오류 발생"
+            conflicts > 0 -> "동기화 완료 (충돌 있음)"
+            else -> "동기화 완료"
+        }
+        
+        val content = StringBuilder()
+        if (uploaded > 0) content.append("업로드: ${uploaded}개 ")
+        if (downloaded > 0) content.append("다운로드: ${downloaded}개 ")
+        if (conflicts > 0) content.append("충돌: ${conflicts}개 ")
+        if (hasErrors) content.append("\n일부 작업 중 오류가 발생했습니다.")
+        
+        if (content.isEmpty() && !hasErrors) return // Nothing to notify
+
+        val icon = when {
+            hasErrors -> android.R.drawable.stat_notify_error
+            conflicts > 0 -> android.R.drawable.ic_dialog_alert
+            else -> android.R.drawable.stat_sys_download_done
+        }
+        
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setContentTitle("동기화 충돌")
-            .setContentText("${count}개의 파일에 충돌이 있습니다. 앱에서 해결해주세요.")
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle(title)
+            .setContentText(content.toString().trim())
+            .setSmallIcon(icon)
             .setAutoCancel(true)
+            .setOngoing(false) // Final results should not be ongoing
+            .setPriority(if (hasErrors) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(createPendingIntent())
             .build()
         
-        notificationManager.notify(CONFLICT_NOTIFICATION_ID, notification)
-    }
-    
-    private fun showCompletionNotification(uploaded: Int, downloaded: Int) {
-        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) 
-            as NotificationManager
-        
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setContentTitle("동기화 완료")
-            .setContentText("업로드: ${uploaded}개, 다운로드: ${downloaded}개")
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentIntent(createPendingIntent())
-            .build()
-        
-        notificationManager.notify(COMPLETE_NOTIFICATION_ID, notification)
-    }
-    
-    private fun showErrorNotification() {
-        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) 
-            as NotificationManager
-        
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setContentTitle("동기화 오류")
-            .setContentText("동기화 중 오류가 발생했습니다. 로그를 확인해 주세요.")
-            .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(createPendingIntent())
-            .build()
-        
-        notificationManager.notify(ERROR_NOTIFICATION_ID, notification)
+        notificationManager.notify(NOTIFICATION_ID, notification)
     }
     
     private fun createNotificationChannel() {
@@ -162,6 +149,7 @@ class SyncWorker(
     
     private fun createPendingIntent(): PendingIntent {
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
+            action = ACTION_SHOW_LOGS
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         
@@ -174,11 +162,9 @@ class SyncWorker(
     }
     
     companion object {
+        const val ACTION_SHOW_LOGS = "uk.xmlangel.googledrivesync.ACTION_SHOW_LOGS"
         const val CHANNEL_ID = "sync_channel"
         const val NOTIFICATION_ID = 1001
-        const val CONFLICT_NOTIFICATION_ID = 1002
-        const val COMPLETE_NOTIFICATION_ID = 1003
-        const val ERROR_NOTIFICATION_ID = 1004
         const val WORK_NAME = "periodic_sync"
         
         /**

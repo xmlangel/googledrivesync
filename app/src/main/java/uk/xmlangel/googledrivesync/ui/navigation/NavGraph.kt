@@ -37,9 +37,17 @@ sealed class Screen(val route: String) {
 @Composable
 fun NavGraph(
     navController: NavHostController = rememberNavController(),
-    startDestination: String = Screen.Account.route
+    startDestination: String = Screen.Account.route,
+    initialRoute: String? = null
 ) {
     val context = LocalContext.current
+    
+    // Handle initial navigation from notification
+    LaunchedEffect(initialRoute) {
+        initialRoute?.let {
+            navController.navigate(it)
+        }
+    }
     
     // Initialize dependencies
     val database = remember { SyncDatabase.getInstance(context) }

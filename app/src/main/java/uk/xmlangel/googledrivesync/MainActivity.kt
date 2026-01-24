@@ -40,6 +40,9 @@ class MainActivity : ComponentActivity() {
         // Schedule background sync
         SyncWorker.schedule(this)
         
+        // Handle intent if started from notification
+        handleIntent(intent)
+        
         setContent {
             GoogledrivesyncTheme {
                 Surface(
@@ -106,6 +109,18 @@ class MainActivity : ComponentActivity() {
                 // For now, let's just log and let user handle it in settings
                 uk.xmlangel.googledrivesync.util.SyncLogger(this).log("배터리 최적화가 활성화되어 있습니다. 백그라운드 동기화가 지연될 수 있습니다.")
             }
+        }
+    }
+    
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+    
+    private fun handleIntent(intent: Intent?) {
+        intent?.let {
+            uk.xmlangel.googledrivesync.util.SyncLogger(this).log("앱이 인텐트로 실행되었습니다: ${it.action}")
         }
     }
 }

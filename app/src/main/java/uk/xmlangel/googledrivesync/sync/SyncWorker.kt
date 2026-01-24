@@ -3,11 +3,14 @@ package uk.xmlangel.googledrivesync.sync
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.app.PendingIntent
+import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import android.content.pm.ServiceInfo
 import androidx.work.*
 import kotlinx.coroutines.flow.first
+import uk.xmlangel.googledrivesync.MainActivity
 import uk.xmlangel.googledrivesync.R
 import uk.xmlangel.googledrivesync.data.local.SyncDatabase
 import uk.xmlangel.googledrivesync.data.local.SyncPreferences
@@ -78,6 +81,7 @@ class SyncWorker(
             .setContentText("Google Drive와 동기화하고 있습니다")
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setOngoing(true)
+            .setContentIntent(createPendingIntent())
             .build()
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -100,6 +104,7 @@ class SyncWorker(
             .setContentText("${count}개의 파일에 충돌이 있습니다. 앱에서 해결해주세요.")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setAutoCancel(true)
+            .setContentIntent(createPendingIntent())
             .build()
         
         notificationManager.notify(CONFLICT_NOTIFICATION_ID, notification)
@@ -115,6 +120,7 @@ class SyncWorker(
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(createPendingIntent())
             .build()
         
         notificationManager.notify(COMPLETE_NOTIFICATION_ID, notification)
@@ -130,6 +136,7 @@ class SyncWorker(
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(createPendingIntent())
             .build()
         
         notificationManager.notify(ERROR_NOTIFICATION_ID, notification)
@@ -151,6 +158,19 @@ class SyncWorker(
                 as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
+    }
+    
+    private fun createPendingIntent(): PendingIntent {
+        val intent = Intent(applicationContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        
+        return PendingIntent.getActivity(
+            applicationContext,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
     
     companion object {

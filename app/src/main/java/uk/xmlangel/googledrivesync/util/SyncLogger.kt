@@ -16,13 +16,14 @@ class SyncLogger(private val context: Context) {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
     /**
-     * Log a message with current timestamp
+     * Log a message with current timestamp and optional account info
      */
-    fun log(message: String) {
+    fun log(message: String, account: String? = null) {
         try {
             checkRotation()
             val timestamp = dateFormat.format(Date())
-            val logEntry = "[$timestamp] $message\n"
+            val accountTag = if (account != null) " [$account]" else ""
+            val logEntry = "[$timestamp]$accountTag $message\n"
             
             FileOutputStream(logFile, true).use { output ->
                 output.write(logEntry.toByteArray())

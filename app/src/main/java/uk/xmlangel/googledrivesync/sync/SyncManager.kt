@@ -93,7 +93,7 @@ class SyncManager(private val context: Context) {
                 )
             )
             
-            logger.log("동기화 시작: folderId=$folderId")
+            logger.log("동기화 시작: folderId=$folderId", folder.accountEmail)
             
             var uploaded = 0
             var downloaded = 0
@@ -108,7 +108,7 @@ class SyncManager(private val context: Context) {
             val driveResult = driveHelper.listFiles(folder.driveFolderId)
             val driveFiles = driveResult.files
             
-            logger.log("스캔 완료: 로컬=${localFiles.size}개, 드라이브=${driveFiles.size}개")
+            logger.log("스캔 완료: 로컬=${localFiles.size}개, 드라이브=${driveFiles.size}개", folder.accountEmail)
             
             // Build maps for comparison
             val localFileMap = localFiles.associateBy { it.name }
@@ -136,7 +136,7 @@ class SyncManager(private val context: Context) {
                     // File exists only locally → Upload
                     localFile != null && driveFile == null -> {
                         if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                            logger.log("업로드 시작: $fileName")
+                            logger.log("업로드 시작: $fileName", folder.accountEmail)
                             val result = driveHelper.uploadFile(
                                 localPath = localFile.absolutePath,
                                 fileName = fileName,
@@ -144,11 +144,11 @@ class SyncManager(private val context: Context) {
                             )
                             if (result != null) {
                                 uploaded++
-                                logger.log("업로드 성공: $fileName")
+                                logger.log("업로드 성공: $fileName", folder.accountEmail)
                                 trackSyncItem(folder, localFile, result.id, SyncStatus.SYNCED)
                             } else {
                                 errors++
-                                logger.log("업로드 실패: $fileName")
+                                logger.log("업로드 실패: $fileName", folder.accountEmail)
                             }
                         } else {
                             skipped++
@@ -159,16 +159,16 @@ class SyncManager(private val context: Context) {
                     localFile == null && driveFile != null -> {
                         if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
                             if (!driveFile.isFolder) {
-                                logger.log("다운로드 시작: $fileName")
+                                logger.log("다운로드 시작: $fileName", folder.accountEmail)
                                 val destPath = "${folder.localPath}/${driveFile.name}"
                                 val success = driveHelper.downloadFile(driveFile.id, destPath)
                                 if (success) {
                                     downloaded++
-                                    logger.log("다운로드 성공: $fileName")
+                                    logger.log("다운로드 성공: $fileName", folder.accountEmail)
                                     trackSyncItem(folder, File(destPath), driveFile.id, SyncStatus.SYNCED)
                                 } else {
                                     errors++
-                                    logger.log("다운로드 실패: $fileName")
+                                    logger.log("다운로드 실패: $fileName", folder.accountEmail)
                                 }
                             }
                         } else {
@@ -234,7 +234,7 @@ class SyncManager(private val context: Context) {
             // Update folder last sync time
             syncFolderDao.updateLastSyncTime(folderId, System.currentTimeMillis())
             
-            logger.log("동기화 완료: 업로드=$uploaded, 다운로드=$downloaded, 스킵=$skipped, 에러=$errors, 충돌=${conflicts.size}")
+            logger.log("동기화 완료: 업로드=$uploaded, 다운로드=$downloaded, 스킵=$skipped, 에러=$errors, 충돌=${conflicts.size}", folder.accountEmail)
             
             return if (conflicts.isNotEmpty()) {
                 _pendingConflicts.value = conflicts

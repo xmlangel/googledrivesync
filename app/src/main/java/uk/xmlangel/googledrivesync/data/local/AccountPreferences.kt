@@ -15,13 +15,26 @@ class AccountPreferences(context: Context) {
     
     private val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
     
-    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-        "account_prefs",
-        masterKeyAlias,
-        context,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs: SharedPreferences = try {
+        createEncryptedPrefs(context)
+    } catch (e: Exception) {
+        // Log the error (optional: use a proper logger in production)
+        e.printStackTrace()
+        // Delete the corrupted preferences file
+        context.deleteSharedPreferences("account_prefs")
+        // Retry creation
+        createEncryptedPrefs(context)
+    }
+
+    private fun createEncryptedPrefs(context: Context): SharedPreferences {
+        return EncryptedSharedPreferences.create(
+            "account_prefs",
+            masterKeyAlias,
+            context,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
     
     private val gson = Gson()
     

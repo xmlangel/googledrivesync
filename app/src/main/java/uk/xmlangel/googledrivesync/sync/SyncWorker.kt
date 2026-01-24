@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import android.content.pm.ServiceInfo
 import androidx.work.*
 import kotlinx.coroutines.flow.first
 import uk.xmlangel.googledrivesync.R
@@ -76,6 +77,14 @@ class SyncWorker(
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setOngoing(true)
             .build()
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return ForegroundInfo(
+                NOTIFICATION_ID, 
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        }
         
         return ForegroundInfo(NOTIFICATION_ID, notification)
     }

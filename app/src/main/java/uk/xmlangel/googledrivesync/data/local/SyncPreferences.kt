@@ -23,15 +23,16 @@ class SyncPreferences(context: Context) {
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
         private const val KEY_DEFAULT_CONFLICT_RESOLUTION = "default_conflict_resolution"
         
-        const val DEFAULT_SYNC_INTERVAL = 60 // minutes
+        const val DEFAULT_SYNC_INTERVAL = 15 // minutes (Default changed from 60 to 15)
     }
     
     /**
      * Get sync interval in minutes
+     * Enforces a minimum of 15 minutes due to Android background task limitations.
      */
     var syncIntervalMinutes: Int
-        get() = prefs.getInt(KEY_SYNC_INTERVAL_MINUTES, DEFAULT_SYNC_INTERVAL)
-        set(value) = prefs.edit { putInt(KEY_SYNC_INTERVAL_MINUTES, value) }
+        get() = prefs.getInt(KEY_SYNC_INTERVAL_MINUTES, DEFAULT_SYNC_INTERVAL).coerceAtLeast(15)
+        set(value) = prefs.edit { putInt(KEY_SYNC_INTERVAL_MINUTES, value.coerceAtLeast(15)) }
     
     /**
      * Sync only on Wi-Fi
@@ -78,6 +79,7 @@ class SyncPreferences(context: Context) {
     
     /**
      * Available sync interval options (in minutes)
+     * All options must be >= 15 minutes.
      */
     val availableIntervals = listOf(
         15, 30, 60, 120, 360, 720, 1440
@@ -87,10 +89,11 @@ class SyncPreferences(context: Context) {
      * Format interval for display
      */
     fun formatInterval(minutes: Int): String {
+        val displayMinutes = minutes.coerceAtLeast(15)
         return when {
-            minutes < 60 -> "${minutes}분"
-            minutes == 60 -> "1시간"
-            minutes < 1440 -> "${minutes / 60}시간"
+            displayMinutes < 60 -> "${displayMinutes}분"
+            displayMinutes == 60 -> "1시간"
+            displayMinutes < 1440 -> "${displayMinutes / 60}시간"
             else -> "24시간"
         }
     }

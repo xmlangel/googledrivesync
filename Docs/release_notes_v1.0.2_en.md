@@ -1,10 +1,8 @@
-## [English]
+# Release Notes v1.0.2
 
-### Release Notes v1.0.2
+Google Drive Sync v1.0.2 has been released! This update focuses on enhancing Google Sign-In stability and improving the navigation flow.
 
-Google Drive Sync v1.0.2 has been released. This update focuses on enhancing Google Sign-In stability and improving the navigation flow.
-
-## Key Improvements
+## 🚀 Key Improvements
 
 ### 1. Enhanced Google Sign-In Flow and Stability
 
@@ -18,7 +16,7 @@ Google Drive Sync v1.0.2 has been released. This update focuses on enhancing Goo
 - Improved the reliability of the auto-navigation logic to the folder selection screen after account setup.
 - Enhanced the Dashboard's loading state presentation when no active account is available to reduce user confusion.
 
-## Fixes
+## 🛠 Fixes
 
 - Fixed a bug in the login status check logic related to the app lifecycle.
 - Introduced an `autoNavigate` flag to prevent redundant navigation calls and ensure stable screen transitions.

@@ -90,10 +90,13 @@ fun AccountScreen(
         }
     }
 
-    // Auto-navigate to folders when active account is updated
+    // Auto-navigate to folders only on first load or when a new account is signed in
+    var navigationHandled by remember { mutableStateOf(false) }
+    
     LaunchedEffect(activeAccount) {
-        if (activeAccount != null && isLoading == false) {
+        if (activeAccount != null && isLoading == false && !navigationHandled) {
             logger.log("활성 계정 감지됨: ${activeAccount?.email}. 폴더 화면으로 이동합니다.")
+            navigationHandled = true
             onNavigateToFolders()
         }
     }

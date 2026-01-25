@@ -1,6 +1,12 @@
 package uk.xmlangel.googledrivesync.ui.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -80,7 +86,10 @@ fun NavGraph(
             AccountScreen(
                 accountRepository = accountRepository,
                 onNavigateToFolders = {
-                    navController.navigate(Screen.Dashboard.route)
+                    navController.navigate(Screen.Dashboard.route) {
+                        // Pop up to the account screen and make it inclusive to clear the stack
+                        popUpTo(Screen.Account.route) { inclusive = true }
+                    }
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
@@ -92,11 +101,11 @@ fun NavGraph(
         }
         
         composable(Screen.Dashboard.route) {
-            activeAccount?.let { account ->
+            if (activeAccount != null) {
                 DashboardScreen(
                     syncManager = syncManager,
                     database = database,
-                    accountId = account.id,
+                    accountId = activeAccount!!.id,
                     onNavigateToSettings = {
                         navController.navigate(Screen.Settings.route)
                     },
@@ -104,6 +113,8 @@ fun NavGraph(
                         navController.navigate(Screen.FolderBrowser.route)
                     },
                     onNavigateToAccounts = {
+                        // When going back to accounts, we don't want to clear the stack 
+                        // as we want to be able to come back to the dashboard if we cancel.
                         navController.navigate(Screen.Account.route)
                     },
                     onNavigateToLogs = {
@@ -113,6 +124,24 @@ fun NavGraph(
                         navController.navigate(Screen.SyncedFolderFile.createRoute(folderId, folderName))
                     }
                 )
+            } else {
+                // Fallback to prevent white screen while activeAccount is loading or if it's null
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+                
+                // If it remains null for some reason, we should eventually redirect to AccountScreen
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(1000)
+                    if (activeAccount == null) {
+                        navController.navigate(Screen.Account.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                }
             }
         }
         

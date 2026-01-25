@@ -56,14 +56,17 @@ fun AccountScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         isLoading = false
+        logger.log("signInLauncher result: resultCode=${result.resultCode}")
         if (result.resultCode == Activity.RESULT_OK) {
             try {
                 val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                logger.log("signInLauncher intent data received")
                 val googleAccount = task.getResult(ApiException::class.java)
                 if (googleAccount != null) {
-                    logger.log("구글 로그인 성공: ${googleAccount.email}")
+                    logger.log("구글 로그인 성공: ${googleAccount.email}, id=${googleAccount.id}")
                     accountRepository.handleSignInResult(googleAccount)
-                    onNavigateToFolders() // Navigate to folders after successful sign-in
+                    // We don't navigate immediately here. 
+                    // Let the LaunchedEffect below handle it when activeAccount state updates.
                 } else {
                     errorMessage = "로그인 정보를 가져올 수 없습니다."
                     logger.log("구글 로그인 실패: account is null")
@@ -71,15 +74,27 @@ fun AccountScreen(
             } catch (e: ApiException) {
                 errorMessage = "로그인 실패: ${e.message} (Status Code: ${e.statusCode})"
                 logger.log("구글 로그인 API 오류: ${e.message}, code=${e.statusCode}")
+                if (e.statusCode == 10) {
+                    errorMessage += "\n(개발자 매개변수 오류: SHA-1이 Google Cloud Console에 등록되었는지 확인하세요)"
+                }
             } catch (e: Exception) {
                 errorMessage = "예기치 못한 오류가 발생했습니다: ${e.message}"
                 logger.log("구글 로그인 처리 중 오류: ${e.message}")
+                e.printStackTrace()
             }
         } else if (result.resultCode == Activity.RESULT_CANCELED) {
             logger.log("구글 로그인 취소됨")
         } else {
             errorMessage = "로그인 과정에서 오류가 발생했습니다. (Result Code: ${result.resultCode})"
             logger.log("구글 로그인 실패: resultCode=${result.resultCode}")
+        }
+    }
+
+    // Auto-navigate to folders when active account is updated
+    LaunchedEffect(activeAccount) {
+        if (activeAccount != null && isLoading == false) {
+            logger.log("활성 계정 감지됨: ${activeAccount?.email}. 폴더 화면으로 이동합니다.")
+            onNavigateToFolders()
         }
     }
     

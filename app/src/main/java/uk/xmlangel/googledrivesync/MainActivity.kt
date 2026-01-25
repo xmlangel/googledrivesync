@@ -32,6 +32,8 @@ class MainActivity : ComponentActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val logger = uk.xmlangel.googledrivesync.util.SyncLogger(this)
+        logger.log("MainActivity.onCreate")
         enableEdgeToEdge()
         
         // Request permissions
@@ -48,6 +50,7 @@ class MainActivity : ComponentActivity() {
         }
         
         setContent {
+            logger.log("MainActivity.setContent")
             GoogledrivesyncTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -57,6 +60,31 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        uk.xmlangel.googledrivesync.util.SyncLogger(this).log("MainActivity.onStart")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        uk.xmlangel.googledrivesync.util.SyncLogger(this).log("MainActivity.onResume")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        uk.xmlangel.googledrivesync.util.SyncLogger(this).log("MainActivity.onPause")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        uk.xmlangel.googledrivesync.util.SyncLogger(this).log("MainActivity.onStop")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        uk.xmlangel.googledrivesync.util.SyncLogger(this).log("MainActivity.onDestroy")
     }
     
     private fun requestPermissions() {

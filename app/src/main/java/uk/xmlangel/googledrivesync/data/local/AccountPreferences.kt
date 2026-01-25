@@ -18,12 +18,19 @@ class AccountPreferences(context: Context) {
     private val prefs: SharedPreferences = try {
         createEncryptedPrefs(context)
     } catch (e: Exception) {
-        // Log the error (optional: use a proper logger in production)
+        uk.xmlangel.googledrivesync.util.SyncLogger(context).log("EncryptedSharedPreferences 생성 실패: ${e.message}. 초기화 시도 중...")
         e.printStackTrace()
         // Delete the corrupted preferences file
         context.deleteSharedPreferences("account_prefs")
-        // Retry creation
-        createEncryptedPrefs(context)
+        try {
+            // Retry creation
+            createEncryptedPrefs(context)
+        } catch (e2: Exception) {
+            uk.xmlangel.googledrivesync.util.SyncLogger(context).log("EncryptedSharedPreferences 재시도 실패: ${e2.message}. 일반 SharedPreferences 사용.")
+            e2.printStackTrace()
+            // Fallback to regular SharedPreferences if encryption is completely broken on this device
+            context.getSharedPreferences("account_prefs_fallback", Context.MODE_PRIVATE)
+        }
     }
 
     private fun createEncryptedPrefs(context: Context): SharedPreferences {

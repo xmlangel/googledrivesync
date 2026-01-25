@@ -30,6 +30,29 @@ class MimeTypeUtilTest {
     }
 
     @Test
+    fun `getMimeType returns correct obsidian and modern types`() {
+        // Obsidian specific
+        assertEquals("text/markdown", MimeTypeUtil.getMimeType("note.md"))
+        assertEquals("application/json", MimeTypeUtil.getMimeType("board.canvas"))
+
+        // Modern web types
+        assertEquals("image/svg+xml", MimeTypeUtil.getMimeType("icon.svg"))
+        assertEquals("image/webp", MimeTypeUtil.getMimeType("image.webp"))
+
+        // Additional Audio
+        assertEquals("audio/wav", MimeTypeUtil.getMimeType("sound.wav"))
+        assertEquals("audio/x-m4a", MimeTypeUtil.getMimeType("audio.m4a"))
+        assertEquals("audio/ogg", MimeTypeUtil.getMimeType("music.ogg"))
+        assertEquals("audio/flac", MimeTypeUtil.getMimeType("highres.flac"))
+
+        // Additional Video
+        assertEquals("video/webm", MimeTypeUtil.getMimeType("video.webm"))
+        assertEquals("video/quicktime", MimeTypeUtil.getMimeType("movie.mov"))
+        assertEquals("video/x-matroska", MimeTypeUtil.getMimeType("hd.mkv"))
+    }
+
+
+    @Test
     fun `getMimeType returns default type for unknown extensions`() {
         assertEquals("application/octet-stream", MimeTypeUtil.getMimeType("file.unknown"))
         assertEquals("application/octet-stream", MimeTypeUtil.getMimeType("no_extension"))

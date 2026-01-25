@@ -42,7 +42,7 @@ class SyncManagerTest {
     @MockK
     lateinit var mockSyncPreferences: SyncPreferences
 
-    @MockK
+    @MockK(relaxUnitFun = true)
     lateinit var mockLogger: SyncLogger
 
     private lateinit var syncManager: SyncManager
@@ -141,5 +141,79 @@ class SyncManagerTest {
         println("  Verified downloadFile was called from Drive (overwriting local).")
         coVerify { mockSyncItemDao.updateItemStatus("test-id", SyncStatus.SYNCED) }
         println("  Verified local DB status was updated to SYNCED.")
+    }
+
+    @Test
+    fun `syncFolder updates lastSyncResult on success`() = runBlocking {
+        println("Testing syncFolder updates lastSyncResult on success...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "account-id",
+            accountEmail = "test@example.com",
+            localPath = "/tmp/local",
+            driveFolderId = "drive-id",
+            driveFolderName = "Drive Folder"
+        )
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns emptyList()
+        
+        // Use spy or just observe the flow
+        syncManager.syncFolder(folderId)
+        
+        val result = syncManager.lastSyncResult.value
+        if (result is SyncResult.Error) {
+            println("  Sync failed with error: ${result.message}")
+            result.exception?.printStackTrace()
+        }
+        assertTrue("Expected Success but got ${result?.javaClass?.simpleName}", result is SyncResult.Success)
+        println("  Verified lastSyncResult is Success after successful sync.")
+    }
+
+    @Test
+    fun `dismissLastResult clears lastSyncResult`() = runBlocking {
+        println("Testing dismissLastResult clears the state...")
+        // Set an initial result (we need access to internal state or trigger a sync)
+        // Since we can't easily set the private field, we trigger a sync that fails
+        coEvery { mockSyncFolderDao.getSyncFolderById(any()) } returns null
+        
+        syncManager.syncFolder("non-existent")
+        assertNotNull("lastSyncResult should not be null after sync failure", syncManager.lastSyncResult.value)
+        
+        syncManager.dismissLastResult()
+        assertNull(syncManager.lastSyncResult.value)
+        println("  Verified lastSyncResult is null after dismissLastResult().")
+    }
+
+    @Test
+    fun `syncFolder logs with ERROR prefix on failure`() = runBlocking {
+        println("Testing error logging with [ERROR] prefix in syncFolder...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "account-id",
+            accountEmail = "test@example.com",
+            localPath = "/tmp/local",
+            driveFolderId = "drive-id",
+            driveFolderName = "Drive Folder"
+        )
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        
+        // Mock a failure during file listing to trigger the catch block in syncFolder
+        coEvery { mockDriveHelper.listAllFiles(any()) } throws Exception("List files failed")
+        
+        syncManager.syncFolder(folderId)
+        
+        // Verify that logger was called with some error message containing [ERROR]
+        verify { mockLogger.log(match { it.contains("[ERROR]") }, any()) }
+        println("  Verified [ERROR] prefix was logged on failure.")
     }
 }

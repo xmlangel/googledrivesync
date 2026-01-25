@@ -18,7 +18,7 @@ import java.util.UUID
 /**
  * Manager for synchronization operations with bidirectional sync support
  */
-class SyncManager private constructor(
+class SyncManager internal constructor(
     private val context: Context,
     private val driveHelper: DriveServiceHelper = DriveServiceHelper(context),
     private val database: SyncDatabase = SyncDatabase.getInstance(context),
@@ -115,11 +115,17 @@ class SyncManager private constructor(
         
         try {
             val folder = syncFolderDao.getSyncFolderById(folderId)
-                ?: return SyncResult.Error("동기화 폴더를 찾을 수 없습니다")
+                ?: run {
+                    val error = SyncResult.Error("동기화 폴더를 찾을 수 없습니다")
+                    _lastSyncResult.value = error
+                    return error
+                }
             
             // Initialize Drive service for this specific account
             if (!driveHelper.initializeDriveService(folder.accountEmail)) {
-                return SyncResult.Error("계정 동기화 서비스를 초기화할 수 없습니다")
+                val error = SyncResult.Error("계정 동기화 서비스를 초기화할 수 없습니다")
+                _lastSyncResult.value = error
+                return error
             }
             
             // Start history entry
@@ -191,6 +197,7 @@ class SyncManager private constructor(
         } catch (e: Exception) {
             val errorResult = SyncResult.Error(e.message ?: "Unknown error", e)
             _lastSyncResult.value = errorResult
+            logger.log("[ERROR] 동기화 중 치명적 오류 발생: ${e.message}")
             return errorResult
         } finally {
             _isSyncing.value = false
@@ -250,6 +257,7 @@ class SyncManager private constructor(
                 SyncStatus.ERROR,
                 e.message ?: "Unknown error"
             )
+            logger.log("[ERROR] 충돌 해결 실패: ${conflict.localFileName}", conflict.syncItem.accountEmail)
             false
         }
     }
@@ -335,7 +343,7 @@ class SyncManager private constructor(
                             uploaded++; logger.log("업로드 성공: $name", folder.accountEmail)
                             trackSyncItem(folder, localFile, result.id, SyncStatus.SYNCED)
                         } else {
-                            errors++; logger.log("업로드 실패: $name", folder.accountEmail)
+                            errors++; logger.log("[ERROR] 업로드 실패: $name", folder.accountEmail)
                         }
                     } else skipped++
                 }
@@ -349,7 +357,7 @@ class SyncManager private constructor(
                             downloaded++; logger.log("다운로드 성공: $name", folder.accountEmail)
                             trackSyncItem(folder, File(destPath), driveFile.id, SyncStatus.SYNCED)
                         } else {
-                            errors++; logger.log("다운로드 실패: $name", folder.accountEmail)
+                            errors++; logger.log("[ERROR] 다운로드 실패: $name", folder.accountEmail)
                         }
                     } else skipped++
                 }
@@ -370,7 +378,10 @@ class SyncManager private constructor(
                             if (defaultResolution != null) {
                                 if (resolveConflict(conflict, defaultResolution)) {
                                     if (defaultResolution == ConflictResolution.USE_LOCAL) uploaded++ else downloaded++
-                                } else errors++
+                                } else {
+                                    errors++
+                                    logger.log("[ERROR] 충돌 해결 실패: $name", folder.accountEmail)
+                                }
                             } else conflicts.add(conflict)
                         }
                         isLocalUpdated -> {
@@ -378,14 +389,20 @@ class SyncManager private constructor(
                                 val result = driveHelper.updateFile(existingItem?.driveFileId ?: driveFile.id, localFile.absolutePath)
                                 if (result != null) {
                                     uploaded++; updateSyncItem(existingItem!!, localFile, driveFile.id, SyncStatus.SYNCED)
-                                } else errors++
+                                } else {
+                                    errors++
+                                    logger.log("[ERROR] 파일 업데이트(업로드) 실패: $name", folder.accountEmail)
+                                }
                             } else skipped++
                         }
                         isDriveUpdated -> {
                             if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
                                 if (driveHelper.downloadFile(driveFile.id, localFile.absolutePath)) {
                                     downloaded++; updateSyncItem(existingItem ?: createSyncItem(folder, localFile, driveFile.id), localFile, driveFile.id, SyncStatus.SYNCED)
-                                } else errors++
+                                } else {
+                                    errors++
+                                    logger.log("[ERROR] 파일 업데이트(다운로드) 실패: $name", folder.accountEmail)
+                                }
                             } else skipped++
                         }
                         else -> skipped++

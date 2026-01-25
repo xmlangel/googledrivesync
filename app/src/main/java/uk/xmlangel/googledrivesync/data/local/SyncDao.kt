@@ -12,6 +12,9 @@ interface SyncFolderDao {
     
     @Query("SELECT * FROM sync_folders WHERE isEnabled = 1")
     fun getEnabledSyncFolders(): Flow<List<SyncFolderEntity>>
+
+    @Query("SELECT * FROM sync_folders WHERE isEnabled = 1")
+    suspend fun getEnabledSyncFoldersOnce(): List<SyncFolderEntity>
     
     @Query("SELECT * FROM sync_folders WHERE id = :id")
     suspend fun getSyncFolderById(id: String): SyncFolderEntity?

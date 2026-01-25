@@ -24,7 +24,7 @@ class SyncWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(context, workerParams) {
     
-    private val syncManager = SyncManager(context)
+    private val syncManager = SyncManager.getInstance(context)
     private val database = SyncDatabase.getInstance(context)
     private val prefs = SyncPreferences(context)
     

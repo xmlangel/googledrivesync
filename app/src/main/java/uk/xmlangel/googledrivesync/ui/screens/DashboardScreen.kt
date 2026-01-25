@@ -43,18 +43,23 @@ fun DashboardScreen(
     
     val isSyncing by syncManager.isSyncing.collectAsState()
     val syncProgress by syncManager.syncProgress.collectAsState()
+    val lastSyncResult by syncManager.lastSyncResult.collectAsState()
     val pendingConflicts by syncManager.pendingConflicts.collectAsState()
     
     var showConflictDialog by remember { mutableStateOf(false) }
     var currentConflict by remember { mutableStateOf<SyncConflict?>(null) }
-    var snackbarMessage by remember { mutableStateOf<String?>(null) }
     
     val snackbarHostState = remember { SnackbarHostState() }
     
-    LaunchedEffect(snackbarMessage) {
-        snackbarMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            snackbarMessage = null
+    LaunchedEffect(lastSyncResult) {
+        lastSyncResult?.let { result ->
+            if (result is SyncResult.Success) {
+                snackbarHostState.showSnackbar("동기화 완료: ${result.uploaded}개 업로드, ${result.downloaded}개 다운로드")
+                syncManager.dismissLastResult()
+            } else if (result is SyncResult.Error) {
+                snackbarHostState.showSnackbar("오류: ${result.message}")
+                syncManager.dismissLastResult()
+            }
         }
     }
     
@@ -97,24 +102,7 @@ fun DashboardScreen(
                 
                 ExtendedFloatingActionButton(
                     onClick = {
-                        scope.launch {
-                            syncFolders.forEach { folder ->
-                                when (val result = syncManager.syncFolder(folder.id)) {
-                                    is SyncResult.Success -> {
-                                        snackbarMessage = "동기화 완료: ${result.uploaded}개 업로드, ${result.downloaded}개 다운로드"
-                                    }
-                                    is SyncResult.Conflict -> {
-                                        // Will be handled by LaunchedEffect
-                                    }
-                                    is SyncResult.Error -> {
-                                        snackbarMessage = "오류: ${result.message}"
-                                    }
-                                    is SyncResult.Cancelled -> {
-                                        snackbarMessage = "동기화가 취소되었습니다"
-                                    }
-                                }
-                            }
-                        }
+                        syncManager.syncAllFolders()
                     },
                     icon = { 
                         if (isSyncing) {
@@ -131,7 +119,8 @@ fun DashboardScreen(
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { padding ->
+    )
+ { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

@@ -1,9 +1,13 @@
 package uk.xmlangel.googledrivesync.sync
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import uk.xmlangel.googledrivesync.data.local.*
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
@@ -14,7 +18,7 @@ import java.util.UUID
 /**
  * Manager for synchronization operations with bidirectional sync support
  */
-class SyncManager(
+class SyncManager private constructor(
     private val context: Context,
     private val driveHelper: DriveServiceHelper = DriveServiceHelper(context),
     private val database: SyncDatabase = SyncDatabase.getInstance(context),
@@ -24,15 +28,32 @@ class SyncManager(
     private val syncPreferences: SyncPreferences = SyncPreferences(context),
     private val logger: uk.xmlangel.googledrivesync.util.SyncLogger = uk.xmlangel.googledrivesync.util.SyncLogger(context)
 ) {
+    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     private val _syncProgress = MutableStateFlow<SyncProgress?>(null)
     val syncProgress: StateFlow<SyncProgress?> = _syncProgress.asStateFlow()
     
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _lastSyncResult = MutableStateFlow<SyncResult?>(null)
+    val lastSyncResult: StateFlow<SyncResult?> = _lastSyncResult.asStateFlow()
     
     private val _pendingConflicts = MutableStateFlow<List<SyncConflict>>(emptyList())
     val pendingConflicts: StateFlow<List<SyncConflict>> = _pendingConflicts.asStateFlow()
+
+    companion object {
+        @Volatile
+        private var INSTANCE: SyncManager? = null
+
+        fun getInstance(context: Context): SyncManager {
+            return INSTANCE ?: synchronized(this) {
+                val instance = SyncManager(context.applicationContext)
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
     
     /**
      * Initialize Drive service
@@ -68,12 +89,29 @@ class SyncManager(
     /**
      * Perform sync for a specific folder
      */
+    fun syncAllFolders() {
+        managerScope.launch {
+            val folders = syncFolderDao.getEnabledSyncFoldersOnce()
+            folders.forEach { folder ->
+                syncFolder(folder.id)
+            }
+        }
+    }
+
+    fun dismissLastResult() {
+        _lastSyncResult.value = null
+    }
+
+    /**
+     * Perform sync for a specific folder
+     */
     suspend fun syncFolder(folderId: String): SyncResult {
         if (_isSyncing.value) {
             return SyncResult.Error("동기화가 이미 진행 중입니다")
         }
         
         _isSyncing.value = true
+        _lastSyncResult.value = null
         
         try {
             val folder = syncFolderDao.getSyncFolderById(folderId)
@@ -141,15 +179,19 @@ class SyncManager(
             
             logger.log("동기화 완료: 업로드=$uploaded, 다운로드=$downloaded, 스킵=$skipped, 에러=$errors, 충돌=${conflicts.size}", folder.accountEmail)
             
-            return if (conflicts.isNotEmpty()) {
+            val syncResult = if (conflicts.isNotEmpty()) {
                 _pendingConflicts.value = conflicts
                 SyncResult.Conflict(conflicts)
             } else {
                 SyncResult.Success(uploaded, downloaded, skipped)
             }
+            _lastSyncResult.value = syncResult
+            return syncResult
             
         } catch (e: Exception) {
-            return SyncResult.Error(e.message ?: "Unknown error", e)
+            val errorResult = SyncResult.Error(e.message ?: "Unknown error", e)
+            _lastSyncResult.value = errorResult
+            return errorResult
         } finally {
             _isSyncing.value = false
             _syncProgress.value = null

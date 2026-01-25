@@ -83,25 +83,30 @@ class AccountRepository(
     /**
      * Handle successful sign-in result
      */
-    fun handleSignInResult(googleAccount: GoogleSignInAccount): GoogleAccount {
-        val account = GoogleAccount(
-            id = googleAccount.id ?: googleAccount.email ?: "",
-            email = googleAccount.email ?: "",
-            displayName = googleAccount.displayName,
-            photoUrl = googleAccount.photoUrl?.toString(),
-            isActive = true
-        )
-        
-        // Add to stored accounts
-        accountPrefs.addAccount(account)
-        
-        // Set as active
-        accountPrefs.setActiveAccountId(account.id)
-        
-        // Reload accounts
-        loadAccounts()
-        
-        return account
+    fun handleSignInResult(googleAccount: GoogleSignInAccount): GoogleAccount? {
+        return try {
+            val account = GoogleAccount(
+                id = googleAccount.id ?: googleAccount.email ?: "",
+                email = googleAccount.email ?: "",
+                displayName = googleAccount.displayName,
+                photoUrl = googleAccount.photoUrl?.toString(),
+                isActive = true
+            )
+            
+            // Add to stored accounts
+            accountPrefs.addAccount(account)
+            
+            // Set as active
+            accountPrefs.setActiveAccountId(account.id)
+            
+            // Reload accounts
+            loadAccounts()
+            
+            account
+        } catch (e: Exception) {
+            uk.xmlangel.googledrivesync.util.SyncLogger(context).log("계정 저장 중 오류: ${e.message}")
+            null
+        }
     }
     
     /**

@@ -47,19 +47,39 @@ fun AccountScreen(
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var accountToDelete by remember { mutableStateOf<GoogleAccount?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    
+    val logger = remember { uk.xmlangel.googledrivesync.util.SyncLogger(context) }
     
     val scope = rememberCoroutineScope()
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        isLoading = false
         if (result.resultCode == Activity.RESULT_OK) {
             try {
                 val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 val googleAccount = task.getResult(ApiException::class.java)
-                accountRepository.handleSignInResult(googleAccount)
+                if (googleAccount != null) {
+                    logger.log("구글 로그인 성공: ${googleAccount.email}")
+                    accountRepository.handleSignInResult(googleAccount)
+                    onNavigateToFolders() // Navigate to folders after successful sign-in
+                } else {
+                    errorMessage = "로그인 정보를 가져올 수 없습니다."
+                    logger.log("구글 로그인 실패: account is null")
+                }
             } catch (e: ApiException) {
-                errorMessage = "로그인 실패: ${e.message}"
+                errorMessage = "로그인 실패: ${e.message} (Status Code: ${e.statusCode})"
+                logger.log("구글 로그인 API 오류: ${e.message}, code=${e.statusCode}")
+            } catch (e: Exception) {
+                errorMessage = "예기치 못한 오류가 발생했습니다: ${e.message}"
+                logger.log("구글 로그인 처리 중 오류: ${e.message}")
             }
+        } else if (result.resultCode == Activity.RESULT_CANCELED) {
+            logger.log("구글 로그인 취소됨")
+        } else {
+            errorMessage = "로그인 과정에서 오류가 발생했습니다. (Result Code: ${result.resultCode})"
+            logger.log("구글 로그인 실패: resultCode=${result.resultCode}")
         }
     }
     
@@ -86,13 +106,34 @@ fun AccountScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { 
-                    // Force sign out from Google Play Services to show account picker
-                    accountRepository.getGoogleSignInClient().signOut().addOnCompleteListener {
-                        signInLauncher.launch(accountRepository.getSignInIntent())
+                    if (!isLoading) {
+                        isLoading = true
+                        logger.log("계정 추가 버튼 클릭")
+                        // Force sign out from Google Play Services to show account picker
+                        accountRepository.getGoogleSignInClient().signOut().addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                logger.log("기존 세션 로그아웃 성공, 계정 선택창 실행")
+                                signInLauncher.launch(accountRepository.getSignInIntent())
+                            } else {
+                                isLoading = false
+                                errorMessage = "로그아웃 실패: ${task.exception?.message}"
+                                logger.log("로그아웃 실패: ${task.exception?.message}")
+                            }
+                        }
                     }
                 },
-                icon = { Icon(Icons.Default.Add, "계정 추가") },
-                text = { Text("계정 추가") }
+                icon = { 
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    } else {
+                        Icon(Icons.Default.Add, "계정 추가")
+                    }
+                },
+                text = { Text(if (isLoading) "처리 중..." else "계정 추가") }
             )
         }
     ) { padding ->

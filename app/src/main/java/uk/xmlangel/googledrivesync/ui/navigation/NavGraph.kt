@@ -96,7 +96,8 @@ fun NavGraph(
                 },
                 onNavigateToLogs = {
                     navController.navigate(Screen.SyncLogs.route)
-                }
+                },
+                autoNavigate = navController.previousBackStackEntry == null
             )
         }
         

@@ -38,7 +38,8 @@ fun AccountScreen(
     accountRepository: AccountRepository,
     onNavigateToFolders: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToLogs: () -> Unit
+    onNavigateToLogs: () -> Unit,
+    autoNavigate: Boolean = true
 ) {
     val context = LocalContext.current
     val accounts by accountRepository.accounts.collectAsState()
@@ -92,12 +93,16 @@ fun AccountScreen(
 
     // Auto-navigate to folders only on first load or when a new account is signed in
     var navigationHandled by remember { mutableStateOf(false) }
+    val initialAccountId = remember { activeAccount?.id }
     
     LaunchedEffect(activeAccount) {
         if (activeAccount != null && isLoading == false && !navigationHandled) {
-            logger.log("활성 계정 감지됨: ${activeAccount?.email}. 폴더 화면으로 이동합니다.")
-            navigationHandled = true
-            onNavigateToFolders()
+            val accountChanged = activeAccount?.id != initialAccountId
+            if (accountChanged || autoNavigate) {
+                logger.log("활성 계정 감지됨: ${activeAccount?.email}. 폴더 화면으로 이동합니다. (autoNavigate=$autoNavigate, accountChanged=$accountChanged)")
+                navigationHandled = true
+                onNavigateToFolders()
+            }
         }
     }
     

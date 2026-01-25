@@ -67,13 +67,16 @@ class SyncManagerTest {
 
     @Test
     fun `initialize returns true when drive helper initializes successfully`() {
+        println("Testing SyncManager initialization...")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
         val result = syncManager.initialize()
         assertTrue(result)
+        println("  SyncManager initialized successfully as expected.")
     }
 
     @Test
     fun `resolveConflict USE_LOCAL updates status and calls driveHelper`() = runBlocking {
+        println("Testing conflict resolution with USE_LOCAL policy...")
         val syncItem = SyncItemEntity(
             id = "test-id",
             syncFolderId = "folder-id",
@@ -90,6 +93,7 @@ class SyncManagerTest {
             status = SyncStatus.CONFLICT
         )
         val conflict = SyncConflict(syncItem, "test.txt", 1000L, 100L, "test.txt", 1000L, 100L)
+        println("  Created conflict situation for test.txt (CONFLICT status)")
         
         val mockDriveItem = mockk<uk.xmlangel.googledrivesync.data.drive.DriveItem>()
         coEvery { mockDriveHelper.updateFile(any(), any(), any()) } returns mockDriveItem
@@ -98,12 +102,16 @@ class SyncManagerTest {
         val result = syncManager.resolveConflict(conflict, ConflictResolution.USE_LOCAL)
         
         assertTrue(result)
+        println("  resolveConflict(USE_LOCAL) returned true")
         coVerify { mockDriveHelper.updateFile("drive-id", "/tmp/test.txt", any()) }
+        println("  Verified updatedFile was called on Drive (uploading local).")
         coVerify { mockSyncItemDao.updateItemStatus("test-id", SyncStatus.SYNCED) }
+        println("  Verified local DB status was updated to SYNCED.")
     }
 
     @Test
     fun `resolveConflict USE_DRIVE updates status and calls driveHelper`() = runBlocking {
+        println("Testing conflict resolution with USE_DRIVE policy...")
         val syncItem = SyncItemEntity(
             id = "test-id",
             syncFolderId = "folder-id",
@@ -120,6 +128,7 @@ class SyncManagerTest {
             status = SyncStatus.CONFLICT
         )
         val conflict = SyncConflict(syncItem, "test.txt", 1000L, 100L, "test.txt", 1000L, 100L)
+        println("  Created conflict situation for test.txt (CONFLICT status)")
         
         coEvery { mockDriveHelper.downloadFile(any(), any()) } returns true
         coEvery { mockSyncItemDao.updateItemStatus(any(), any()) } just Runs
@@ -127,7 +136,10 @@ class SyncManagerTest {
         val result = syncManager.resolveConflict(conflict, ConflictResolution.USE_DRIVE)
         
         assertTrue(result)
+        println("  resolveConflict(USE_DRIVE) returned true")
         coVerify { mockDriveHelper.downloadFile("drive-id", "/tmp/test.txt") }
+        println("  Verified downloadFile was called from Drive (overwriting local).")
         coVerify { mockSyncItemDao.updateItemStatus("test-id", SyncStatus.SYNCED) }
+        println("  Verified local DB status was updated to SYNCED.")
     }
 }

@@ -41,6 +41,7 @@ class SyncDaoTest {
 
     @Test
     fun `insert and get sync folder`() = runBlocking {
+        println("Testing SyncFolder insertion and retrieval...")
         val folder = SyncFolderEntity(
             id = "test-folder",
             accountId = "account-1",
@@ -52,15 +53,18 @@ class SyncDaoTest {
         )
         
         folderDao.insertSyncFolder(folder)
+        println("  Inserted folder with ID: test-folder")
         
         val result = folderDao.getSyncFolderById("test-folder")
         assertNotNull(result)
         assertEquals("account-1", result?.accountId)
         assertEquals("GoogleDocs", result?.driveFolderName)
+        println("  Retrieved folder successfully and verified accountId and name.")
     }
 
     @Test
     fun `getEnabledSyncFolders returns only enabled folders`() = runBlocking {
+        println("Testing retrieval of enabled folders...")
         val folder1 = SyncFolderEntity(
             id = "f1", accountId = "a1", accountEmail = "e1", localPath = "p1", 
             driveFolderId = "d1", driveFolderName = "n1", isEnabled = true
@@ -72,14 +76,17 @@ class SyncDaoTest {
         
         folderDao.insertSyncFolder(folder1)
         folderDao.insertSyncFolder(folder2)
+        println("  Inserted one enabled folder (f1) and one disabled folder (f2)")
         
         val enabledFolders = folderDao.getEnabledSyncFolders().first()
         assertEquals(1, enabledFolders.size)
         assertEquals("f1", enabledFolders[0].id)
+        println("  Verified that only folder f1 was returned.")
     }
 
     @Test
     fun `insert and count items by status`() = runBlocking {
+        println("Testing item counting by status...")
         val folderId = "folder-1"
         val item1 = SyncItemEntity(
             id = "i1", syncFolderId = folderId, accountId = "a1", accountEmail = "e1",
@@ -96,28 +103,31 @@ class SyncDaoTest {
         
         itemDao.insertSyncItem(item1)
         itemDao.insertSyncItem(item2)
+        println("  Inserted one SYNCED item and one ERROR item")
         
         val syncedCount = itemDao.countItemsByStatus(folderId, SyncStatus.SYNCED)
         val errorCount = itemDao.countItemsByStatus(folderId, SyncStatus.ERROR)
         
         assertEquals(1, syncedCount)
         assertEquals(1, errorCount)
+        println("  Counted SYNCED: $syncedCount, ERROR: $errorCount. Verified correctly.")
     }
 
     @Test
     fun `deleteFoldersByAccount removes folders but Room might not cascade if not defined`() = runBlocking {
-        // SyncEntities.kt does not define ForeignKey with CASCADE.
-        // So we manually verify the DAOs' delete methods as implemented in SyncDao.kt
-        
+        println("Testing folder deletion by account...")
         val folder = SyncFolderEntity(
             id = "f1", accountId = "acc-delete", accountEmail = "e1", localPath = "p1",
             driveFolderId = "d1", driveFolderName = "n1"
         )
         folderDao.insertSyncFolder(folder)
+        println("  Inserted folder for account: acc-delete")
         
         folderDao.deleteFoldersByAccount("acc-delete")
+        println("  Executed deleteFoldersByAccount(\"acc-delete\")")
         
         val result = folderDao.getSyncFolderById("f1")
         assertNull(result)
+        println("  Verified that folder f1 was deleted from database.")
     }
 }

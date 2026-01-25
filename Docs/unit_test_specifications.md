@@ -13,6 +13,7 @@
 | `getMimeType returns correct image types` | 이미지 파일 매핑 확인 | .jpg, .JPEG, .png, .gif 확장자에 대해 `image/*` 타입을 정확히 반환하는지 확인 |
 | `getMimeType returns correct document types` | 문서 파일 매핑 확인 | .pdf, .doc, .docx, .xls, .xlsx, .txt 확장자에 대해 올바른 `application/*` 또는 `text/plain` 타입을 반환하는지 확인 |
 | `getMimeType returns correct media types` | 미디어 파일 매핑 확인 | .mp3, .mp4 확장자에 대해 오디오/비디오 타입을 정확히 반환하는지 확인 |
+| `getMimeType returns correct obsidian and modern types` | Obsidian 및 최신 포맷 매핑 확인 | .md, .canvas, .svg, .webp 및 다양한 추가 미디어 확장자에 대해 정확한 MIME 타입을 반환하는지 확인 |
 | `getMimeType returns default type for unknown extensions` | 예외 상황 처리 확인 | 알 수 없는 확장자나 확장자가 없는 파일에 대해 기본값(`application/octet-stream`)을 반환하는지 확인 |
 
 ---

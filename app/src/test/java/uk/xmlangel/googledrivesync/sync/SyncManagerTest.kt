@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.*
 import io.mockk.impl.annotations.MockK
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -215,5 +217,51 @@ class SyncManagerTest {
         // Verify that logger was called with some error message containing [ERROR]
         verify { mockLogger.log(match { it.contains("[ERROR]") }, any()) }
         println("  Verified [ERROR] prefix was logged on failure.")
+    }
+
+    @Test
+    fun `syncFolder updates syncProgress with correct currentIndex and totalFiles`() = runBlocking {
+        println("Testing syncFolder updates syncProgress correctly...")
+        val folderId = "test-folder-id"
+        // Use a real-looking local path
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        // Mock 1 file in Drive
+        val driveItems = listOf(
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("id1", "file1.txt", "text/plain", 1000L, 100L, emptyList(), false)
+        )
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
+        coEvery { mockDriveHelper.downloadFile(any(), any()) } returns true
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(any()) } returns null
+        coEvery { mockSyncItemDao.insertSyncItem(any()) } just Runs
+
+        val progressUpdates = mutableListOf<SyncProgress>()
+        
+        // Launch collection in background
+        val collectJob = launch(Dispatchers.Unconfined) {
+            syncManager.syncProgress.collect { progress ->
+                if (progress != null) {
+                    progressUpdates.add(progress)
+                }
+            }
+        }
+
+        syncManager.syncFolder(folderId)
+        
+        // No need for delay with Dispatchers.Unconfined and completion of syncFolder
+        collectJob.cancel()
+        
+        // Verify we got the progress update
+        assertFalse("Should have received progress updates", progressUpdates.isEmpty())
+        val lastProgress = progressUpdates.last()
+        assertEquals("Total files should be 1", 1, lastProgress.totalFiles)
+        assertEquals("Current index should be 1", 1, lastProgress.currentIndex)
+        println("  Verified syncProgress updates: totalFiles=${lastProgress.totalFiles}, currentIndex=${lastProgress.currentIndex}")
     }
 }

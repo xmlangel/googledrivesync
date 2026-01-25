@@ -14,6 +14,7 @@ import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.data.model.SyncStatus
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Manager for synchronization operations with bidirectional sync support
@@ -41,6 +42,9 @@ class SyncManager internal constructor(
     
     private val _pendingConflicts = MutableStateFlow<List<SyncConflict>>(emptyList())
     val pendingConflicts: StateFlow<List<SyncConflict>> = _pendingConflicts.asStateFlow()
+
+    private var currentFileIndex = AtomicInteger(0)
+    private var totalSyncFiles = 0
 
     companion object {
         @Volatile
@@ -153,6 +157,10 @@ class SyncManager internal constructor(
             val driveItems = driveHelper.listAllFiles(folder.driveFolderId)
             
             logger.log("스캔 완료: 로컬=${localItems.size}개, 드라이브=${driveItems.size}개", folder.accountEmail)
+            
+            // Calculate total files for progress tracking
+            totalSyncFiles = countAllFiles(folder.localPath, folder.driveFolderId)
+            currentFileIndex.set(0)
             
             // Use a unified recursive sync method
             val result = syncDirectoryRecursive(
@@ -286,10 +294,11 @@ class SyncManager internal constructor(
             val localFile = localMap[name]
             val driveFile = driveMap[name]
 
+            val currentIndex = currentFileIndex.incrementAndGet()
             _syncProgress.value = SyncProgress(
                 currentFile = name,
-                currentIndex = 0, // Simplified for recursive calls
-                totalFiles = allNames.size,
+                currentIndex = currentIndex,
+                totalFiles = totalSyncFiles,
                 bytesTransferred = 0,
                 totalBytes = localFile?.length() ?: driveFile?.size ?: 0,
                 isUploading = driveFile == null
@@ -323,7 +332,13 @@ class SyncManager internal constructor(
                         val subLocalItems = scanLocalFolder(subLocalPath)
                         val subDriveItems = driveHelper.listAllFiles(subDriveFolderId)
                         
-                        val subResult = syncDirectoryRecursive(folder, subLocalPath, subDriveFolderId, subLocalItems, subDriveItems)
+                        val subResult = syncDirectoryRecursive(
+                            folder = folder,
+                            localPath = subLocalPath,
+                            driveFolderId = subDriveFolderId,
+                            localItems = subLocalItems,
+                            driveItems = subDriveItems
+                        )
                         uploaded += subResult.uploaded
                         downloaded += subResult.downloaded
                         skipped += subResult.skipped
@@ -420,6 +435,53 @@ class SyncManager internal constructor(
         val errors: Int,
         val conflicts: List<SyncConflict>
     )
+
+    /**
+     * Count all files and folders recursively to get total sync count
+     */
+    private suspend fun countAllFiles(localPath: String, driveFolderId: String): Int {
+        val localFiles = scanLocalFolder(localPath)
+        val driveFiles = driveHelper.listAllFiles(driveFolderId)
+        
+        val localMap = localFiles.associateBy { it.name }
+        val driveMap = driveFiles.associateBy { it.name }
+        val allNames = (localMap.keys + driveMap.keys).toSet()
+        
+        var count = 0
+        for (name in allNames) {
+            val localFile = localMap[name]
+            val driveFile = driveMap[name]
+            
+            count++ // Count current item
+            
+            // If it's a directory, count its contents too
+            if ((localFile != null && localFile.isDirectory) || (driveFile != null && driveFile.isFolder)) {
+                val subDriveId = driveFile?.id
+                if (subDriveId != null) {
+                    val subLocalPath = File(localPath, name).absolutePath
+                    count += countAllFiles(subLocalPath, subDriveId)
+                } else if (localFile != null) {
+                    // Local directory only, but we don't have Drive ID yet
+                    // To be accurate, we'd need to assume it'll be created
+                    // For now, let's just count local sub-items
+                    count += countLocalFilesRecursive(localFile)
+                }
+            }
+        }
+        return count
+    }
+
+    private fun countLocalFilesRecursive(file: File): Int {
+        var count = 0
+        val contents = file.listFiles() ?: return 0
+        for (item in contents) {
+            count++
+            if (item.isDirectory) {
+                count += countLocalFilesRecursive(item)
+            }
+        }
+        return count
+    }
 
     /**
      * Scan local folder for files and directories

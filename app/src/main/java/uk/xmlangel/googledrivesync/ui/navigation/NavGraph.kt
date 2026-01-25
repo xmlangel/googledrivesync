@@ -66,7 +66,7 @@ fun NavGraph(
         ) 
     }
     val driveHelper = remember { DriveServiceHelper(context) }
-    val syncManager = remember { SyncManager(context) }
+    val syncManager = remember { SyncManager.getInstance(context) }
     val syncPreferences = remember { SyncPreferences(context) }
     
     val activeAccount by accountRepository.activeAccount.collectAsState()

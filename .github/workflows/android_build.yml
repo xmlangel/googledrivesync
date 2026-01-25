@@ -61,14 +61,16 @@ jobs:
         if [ -f "$KR_NOTES" ]; then
           cat "$KR_NOTES" >> combined_notes.md
         else
+          echo "## [Korean]" >> combined_notes.md
           echo "Korean release notes not found at $KR_NOTES" >> combined_notes.md
         fi
         
-        echo -e "\n---\n" >> combined_notes.md
+        echo -e "\n\n" >> combined_notes.md
         
         if [ -f "$EN_NOTES" ]; then
           cat "$EN_NOTES" >> combined_notes.md
         else
+          echo "## [English]" >> combined_notes.md
           echo "English release notes not found at $EN_NOTES" >> combined_notes.md
         fi
 

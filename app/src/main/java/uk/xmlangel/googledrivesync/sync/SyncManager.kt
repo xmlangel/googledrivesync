@@ -14,15 +14,16 @@ import java.util.UUID
 /**
  * Manager for synchronization operations with bidirectional sync support
  */
-class SyncManager(private val context: Context) {
-    
-    private val driveHelper = DriveServiceHelper(context)
-    private val database = SyncDatabase.getInstance(context)
-    private val syncFolderDao = database.syncFolderDao()
-    private val syncItemDao = database.syncItemDao()
-    private val historyDao = database.syncHistoryDao()
-    private val syncPreferences = SyncPreferences(context)
-    private val logger = uk.xmlangel.googledrivesync.util.SyncLogger(context)
+class SyncManager(
+    private val context: Context,
+    private val driveHelper: DriveServiceHelper = DriveServiceHelper(context),
+    private val database: SyncDatabase = SyncDatabase.getInstance(context),
+    private val syncFolderDao: SyncFolderDao = database.syncFolderDao(),
+    private val syncItemDao: SyncItemDao = database.syncItemDao(),
+    private val historyDao: SyncHistoryDao = database.syncHistoryDao(),
+    private val syncPreferences: SyncPreferences = SyncPreferences(context),
+    private val logger: uk.xmlangel.googledrivesync.util.SyncLogger = uk.xmlangel.googledrivesync.util.SyncLogger(context)
+) {
     
     private val _syncProgress = MutableStateFlow<SyncProgress?>(null)
     val syncProgress: StateFlow<SyncProgress?> = _syncProgress.asStateFlow()
@@ -446,18 +447,6 @@ class SyncManager(private val context: Context) {
     }
     
     private fun getMimeType(fileName: String): String {
-        val extension = fileName.substringAfterLast('.', "")
-        return when (extension.lowercase()) {
-            "jpg", "jpeg" -> "image/jpeg"
-            "png" -> "image/png"
-            "gif" -> "image/gif"
-            "pdf" -> "application/pdf"
-            "doc", "docx" -> "application/msword"
-            "xls", "xlsx" -> "application/vnd.ms-excel"
-            "txt" -> "text/plain"
-            "mp3" -> "audio/mpeg"
-            "mp4" -> "video/mp4"
-            else -> "application/octet-stream"
-        }
+        return uk.xmlangel.googledrivesync.util.MimeTypeUtil.getMimeType(fileName)
     }
 }

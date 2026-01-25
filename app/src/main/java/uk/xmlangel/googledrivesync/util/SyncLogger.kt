@@ -34,6 +34,11 @@ class SyncLogger(private val context: Context) {
     }
 
     /**
+     * Get the log file for sharing/exporting
+     */
+    fun getLogFile(): File = logFile
+
+    /**
      * Read all logs from current and old log files
      */
     fun readLogs(): List<String> {

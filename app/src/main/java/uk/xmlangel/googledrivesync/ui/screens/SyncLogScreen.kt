@@ -1,5 +1,6 @@
 package uk.xmlangel.googledrivesync.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,13 +9,16 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FilterListOff
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import uk.xmlangel.googledrivesync.util.SyncLogger
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +41,24 @@ fun SyncLogScreen(
     LaunchedEffect(Unit) {
         logs = logger.readLogs()
     }
+
+    fun shareLogFile() {
+        val logFile = logger.getLogFile()
+        if (logFile.exists()) {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                logFile
+            )
+            
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "로그 공유"))
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -48,6 +70,9 @@ fun SyncLogScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { shareLogFile() }) {
+                        Icon(Icons.Default.Share, contentDescription = "로그 공유")
+                    }
                     IconButton(onClick = { showErrorsOnly = !showErrorsOnly }) {
                         Icon(
                             imageVector = if (showErrorsOnly) Icons.Default.FilterListOff else Icons.Default.FilterList,

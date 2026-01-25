@@ -23,6 +23,14 @@ class DriveServiceHelper(private val context: Context) {
     private var driveService: Drive? = null
     
     /**
+     * Set Drive service for testing
+     */
+    @androidx.annotation.VisibleForTesting
+    internal fun setDriveServiceForTest(service: Drive) {
+        this.driveService = service
+    }
+    
+    /**
      * Initialize Drive service with a specific account or current signed-in account
      */
     fun initializeDriveService(accountEmail: String? = null): Boolean {
@@ -120,8 +128,33 @@ class DriveServiceHelper(private val context: Context) {
     suspend fun downloadFile(fileId: String, destinationPath: String): Boolean = 
         withContext(Dispatchers.IO) {
             try {
+                // Get metadata first to check size and mimeType
+                val fileMetadata = getDrive().files().get(fileId)
+                    .setFields("id, name, mimeType, size")
+                    .execute()
+                
+                val mimeType = fileMetadata.mimeType
+                val size = fileMetadata.getSize() ?: 0L
+                
+                // 1. Handle 0-byte files (Fix for 416 error)
+                if (size == 0L && !isGoogleDoc(mimeType)) {
+                    File(destinationPath).createNewFile()
+                    return@withContext true
+                }
+                
                 val outputStream: OutputStream = FileOutputStream(destinationPath)
-                getDrive().files().get(fileId).executeMediaAndDownloadTo(outputStream)
+                
+                // 2. Handle Google Docs (Fix for 403 error)
+                if (isGoogleDoc(mimeType)) {
+                    val exportMimeType = getExportMimeType(mimeType)
+                    getDrive().files().export(fileId, exportMimeType)
+                        .executeMediaAndDownloadTo(outputStream)
+                } else {
+                    // Normal binary file
+                    getDrive().files().get(fileId)
+                        .executeMediaAndDownloadTo(outputStream)
+                }
+                
                 outputStream.close()
                 true
             } catch (e: Exception) {
@@ -129,6 +162,22 @@ class DriveServiceHelper(private val context: Context) {
                 false
             }
         }
+
+    private fun isGoogleDoc(mimeType: String?): Boolean {
+        return mimeType?.startsWith("application/vnd.google-apps.") == true &&
+                mimeType != MIME_TYPE_FOLDER
+    }
+
+    private fun getExportMimeType(googleMimeType: String?): String {
+        return when (googleMimeType) {
+            "application/vnd.google-apps.document" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "application/vnd.google-apps.spreadsheet" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "application/vnd.google-apps.presentation" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            "application/vnd.google-apps.drawing" -> "image/png"
+            "application/vnd.google-apps.script" -> "application/vnd.google-apps.script+json"
+            else -> "application/pdf"
+        }
+    }
     
     /**
      * Upload a file

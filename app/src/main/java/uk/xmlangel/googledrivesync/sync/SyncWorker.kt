@@ -204,7 +204,7 @@ class SyncWorker(
             
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 syncRequest
             )
         }
@@ -221,7 +221,11 @@ class SyncWorker(
                 )
                 .build()
             
-            WorkManager.getInstance(context).enqueue(syncRequest)
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "manual_sync",
+                ExistingWorkPolicy.REPLACE,
+                syncRequest
+            )
         }
         
         /**

@@ -121,11 +121,14 @@ jobs:
           echo "English release notes not found at $EN_NOTES" >> combined_notes.md
         fi
 
+    - name: Rename APK
+      run: mv app-debug.apk app-debug-${{ github.ref_name }}.apk
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         body_path: combined_notes.md
-        files: app-debug.apk
+        files: app-debug-${{ github.ref_name }}.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

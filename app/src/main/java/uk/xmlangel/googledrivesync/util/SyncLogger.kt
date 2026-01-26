@@ -1,6 +1,7 @@
 package uk.xmlangel.googledrivesync.util
 
 import android.content.Context
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -28,6 +29,8 @@ class SyncLogger(private val context: Context) {
             FileOutputStream(logFile, true).use { output ->
                 output.write(logEntry.toByteArray())
             }
+            // Also output to Logcat for easier debugging
+            Log.d(TAG, accountTag + " " + message)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -84,5 +87,6 @@ class SyncLogger(private val context: Context) {
     companion object {
         private const val LOG_FILE_NAME = "sync.log"
         private const val MAX_SIZE = 10 * 1024 * 1024 // 10MB
+        private const val TAG = "GoogleDriveSync"
     }
 }

@@ -1,0 +1,50 @@
+---
+description: 애플리케이션 버전 관리 및 태깅 프로세스
+---
+
+# 버전 관리 워크플로우
+
+이 프로젝트는 `Major.Minor.Build` 형식을 사용하여 버전을 관리합니다.
+
+## 버전 규칙
+
+- **형식:** `X.Y.Z` (예: 1.0.0, 1.1.1, 1.1.100, 1.1.1000)
+- **증가 방식:**
+  - `Major (X)`: 중대한 아키텍처 변경 또는 기능 개편 시 증가. **증가 시 Minor(Y)와 Build(Z) 번호는 0으로 초기화**합니다.
+  - `Minor (Y)`: 새로운 기능 추가 또는 대규모 리팩토링 시 증가. **증가 시 Build(Z) 번호는 0으로 초기화**합니다.
+  - `Build (Z)`: 버그 수정, 소규모 개선, 단순 배포 시 증가.
+- **versionCode:** `app/build.gradle`의 `versionCode`는 배포 시마다 항상 1씩 증가해야 합니다 (버전 초기화와 상관없이 계속 증가).
+
+## 버전 업데이트 단계
+
+1. `app/build.gradle` 파일의 `versionName`과 `versionCode`를 확인합니다.
+2. 현재 `versionName`을 기준으로 다음 버전을 결정합니다 (예: `1.0.9` -> `1.1.0` 또는 `1.0.10`).
+3. `app/build.gradle`의 `versionName`을 새 버전으로 업데이트하고, `versionCode`를 1 증가시킵니다.
+
+    ```gradle
+    defaultConfig {
+        ...
+        versionCode 11 // 이전 값 + 1
+        versionName "1.1.0" // 새 버전
+    }
+    ```
+
+4. `DashboardScreen.kt` (또는 앱 UI에서 버전 정보를 표시하는 곳)의 버전 문자열을 업데이트합니다.
+    - 예: `Text("Google Drive Sync v1.1.0")`
+
+## Git 태깅 (Tagging)
+
+> [!IMPORTANT]
+> Git 태그 생성은 사용자가 **명시적으로 요청할 때만** 수행합니다.
+
+사용자가 태깅을 요청하면 다음 명령어를 실행합니다:
+
+```bash
+git tag -a v1.1.0 -m "Release version 1.1.0"
+git push origin v1.1.0
+```
+
+## 완료 후 확인
+
+- `./gradlew assembleDebug` 명령을 실행하여 빌드가 정상적으로 완료되는지 확인합니다.
+- 변경된 `versionName`이 UI에 올바르게 표시되는지 확인합니다.

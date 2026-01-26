@@ -1,5 +1,7 @@
 package uk.xmlangel.googledrivesync.ui.screens
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,9 +13,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import uk.xmlangel.googledrivesync.R
 import uk.xmlangel.googledrivesync.data.local.SyncDatabase
 import uk.xmlangel.googledrivesync.data.local.SyncFolderEntity
 import uk.xmlangel.googledrivesync.sync.SyncConflict
@@ -36,6 +41,7 @@ fun DashboardScreen(
     onNavigateToSyncedFolder: (folderId: String, folderName: String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     
     val syncFolders by database.syncFolderDao()
         .getSyncFoldersByAccount(accountId)
@@ -73,16 +79,49 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Google Drive Sync") },
+                title = { Text("Google Drive Sync v1.0.11") },
                 actions = {
-                    IconButton(onClick = onNavigateToAccounts) {
-                        Icon(Icons.Default.AccountCircle, "계정")
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, "설정")
-                    }
-                    IconButton(onClick = onNavigateToLogs) {
-                        Icon(Icons.Default.List, "로그")
+                    Row(
+                        modifier = Modifier.padding(end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onNavigateToAccounts,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(Icons.Default.AccountCircle, "계정")
+                        }
+                        IconButton(
+                            onClick = {
+                                val packageName = "md.obsidian"
+                                val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                                if (intent != null) {
+                                    context.startActivity(intent)
+                                } else {
+                                    Toast.makeText(context, "Obsidian 앱이 설치되어 있지 않습니다.", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_obsidian),
+                                contentDescription = "Obsidian 실행",
+                                modifier = Modifier.size(24.dp),
+                                tint = androidx.compose.ui.graphics.Color.Unspecified
+                            )
+                        }
+                        IconButton(
+                            onClick = onNavigateToSettings,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(Icons.Default.Settings, "설정")
+                        }
+                        IconButton(
+                            onClick = onNavigateToLogs,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(Icons.Default.List, "로그")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

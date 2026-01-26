@@ -100,6 +100,7 @@ jobs:
     - name: Combine Release Notes
       run: |
         VERSION=${GITHUB_REF#refs/tags/}
+        REPO_URL="${{ github.server_url }}/${{ github.repository }}"
         KR_NOTES="Docs/release_notes_${VERSION}.md"
         EN_NOTES="Docs/release_notes_${VERSION}_en.md"
         
@@ -109,7 +110,7 @@ jobs:
           cat "$KR_NOTES" >> combined_notes.md
         else
           echo "## [Korean]" >> combined_notes.md
-          echo "Korean release notes not found at $KR_NOTES" >> combined_notes.md
+          echo "Korean release notes not found in this tag. You can find them here: [Korean Release Notes]($REPO_URL/blob/main/$KR_NOTES)" >> combined_notes.md
         fi
         
         echo -e "\n\n" >> combined_notes.md
@@ -118,7 +119,7 @@ jobs:
           cat "$EN_NOTES" >> combined_notes.md
         else
           echo "## [English]" >> combined_notes.md
-          echo "English release notes not found at $EN_NOTES" >> combined_notes.md
+          echo "English release notes not found in this tag. You can find them here: [English Release Notes]($REPO_URL/blob/main/$EN_NOTES)" >> combined_notes.md
         fi
 
     - name: Rename APK

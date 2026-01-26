@@ -29,11 +29,16 @@ jobs:
 
     - name: Upload JUnit Results
       if: always()
+      env:
+        TEST_USERNAME: ${{ secrets.TEST_SERVER_USERNAME }}
+        TEST_PASSWORD: ${{ secrets.TEST_SERVER_PASSWORD }}
+        PROJECT_ID: ${{ secrets.TEST_PROJECT_ID }}
+        SERVER_URL: https://testcasecraft.xmlangel.uk
       run: |
         # Login to get JWT Token
-        TOKEN=$(curl -s -X POST "http://192.168.1.156:8080/api/auth/login" \
+        TOKEN=$(curl -s -X POST "$SERVER_URL/api/auth/login" \
           -H "Content-Type: application/json" \
-          -d '{"username": "github", "password": "github123"}' | jq -r '.accessToken')
+          -d "{\"username\": \"$TEST_USERNAME\", \"password\": \"$TEST_PASSWORD\"}" | jq -r '.accessToken')
         
         if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
           echo "Failed to retrieve authentication token"
@@ -42,10 +47,9 @@ jobs:
 
         # Find and upload each XML file
         # Results are usually in app/build/test-results/testDebugUnitTest/
-        PROJECT_ID="21da74a2-1e08-47ea-9a57-66cf21438adf"
         find app/build/test-results -name "*.xml" | while read -r file; do
           echo "Uploading $file..."
-          curl -X POST "http://192.168.1.156:8080/api/junit-results/upload?projectId=${PROJECT_ID}&executionName=GitHub_Action_$(date +%Y%m%d_%H%M%S)" \
+          curl -X POST "$SERVER_URL/api/junit-results/upload?projectId=${PROJECT_ID}&executionName=GitHub_Action_$(date +%Y%m%d_%H%M%S)" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: multipart/form-data" \
             -F "file=@$file"

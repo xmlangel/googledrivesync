@@ -449,9 +449,13 @@ class SyncManager internal constructor(
         val localModified = localFile.lastModified()
         val driveModified = driveFile.modifiedTime
         
-        // Use individual modification times for more accurate change detection
-        val isLocalUpdated = localModified > (existingItem?.localModifiedAt ?: 0L)
-        val isDriveUpdated = driveModified > (existingItem?.driveModifiedAt ?: 0L)
+        // Use a 1-second threshold for modification time comparisons to handle filesystem/server precision differences
+        val isLocalUpdated = (localModified / 1000) > ((existingItem?.localModifiedAt ?: 0L) / 1000)
+        val isDriveUpdated = (driveModified / 1000) > ((existingItem?.driveModifiedAt ?: 0L) / 1000)
+        
+        if (isLocalUpdated || isDriveUpdated) {
+            logger.log("변경 감지: ${localFile.name} (Local: $localModified vs ${existingItem?.localModifiedAt}, Drive: $driveModified vs ${existingItem?.driveModifiedAt})", folder.accountEmail)
+        }
         
         when {
             isLocalUpdated && isDriveUpdated -> {
@@ -645,7 +649,7 @@ class SyncManager internal constructor(
             fileName = localFile.name,
             mimeType = getMimeType(localFile.name),
             localModifiedAt = localFile.lastModified(),
-            driveModifiedAt = System.currentTimeMillis(),
+            driveModifiedAt = 0L,
             localSize = localFile.length(),
             driveSize = 0,
             status = SyncStatus.CONFLICT,

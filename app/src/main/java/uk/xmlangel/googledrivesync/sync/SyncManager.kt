@@ -390,7 +390,7 @@ class SyncManager internal constructor(
                         val result = driveHelper.uploadFile(localFile.absolutePath, name, driveFolderId)
                         if (result != null) {
                             uploaded++; logger.log("업로드 성공: $name", folder.accountEmail)
-                            trackSyncItem(folder, localFile, result.id, SyncStatus.SYNCED)
+                            trackSyncItem(folder, localFile, result.id, result.modifiedTime, SyncStatus.SYNCED)
                         } else {
                             errors++; logger.log("[ERROR] 업로드 실패: $name", folder.accountEmail)
                         }
@@ -413,7 +413,7 @@ class SyncManager internal constructor(
                         val success = driveHelper.downloadFile(driveFile.id, destPath)
                         if (success) {
                             downloaded++; logger.log("다운로드 성공: $name", folder.accountEmail)
-                            trackSyncItem(folder, File(destPath), driveFile.id, SyncStatus.SYNCED)
+                            trackSyncItem(folder, File(destPath), driveFile.id, driveFile.modifiedTime, SyncStatus.SYNCED)
                         } else {
                             errors++; logger.log("[ERROR] 다운로드 실패: $name", folder.accountEmail)
                         }
@@ -448,10 +448,10 @@ class SyncManager internal constructor(
 
         val localModified = localFile.lastModified()
         val driveModified = driveFile.modifiedTime
-        val lastSyncedAt = existingItem?.lastSyncedAt ?: 0L
         
-        val isLocalUpdated = localModified > lastSyncedAt
-        val isDriveUpdated = driveModified > lastSyncedAt
+        // Use individual modification times for more accurate change detection
+        val isLocalUpdated = localModified > (existingItem?.localModifiedAt ?: 0L)
+        val isDriveUpdated = driveModified > (existingItem?.driveModifiedAt ?: 0L)
         
         when {
             isLocalUpdated && isDriveUpdated -> {
@@ -474,7 +474,14 @@ class SyncManager internal constructor(
                 if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
                     val result = driveHelper.updateFile(existingItem?.driveFileId ?: driveFile.id, localFile.absolutePath)
                     if (result != null) {
-                        uploaded++; updateSyncItem(existingItem ?: createSyncItem(folder, localFile, driveFile.id), localFile, driveFile.id, SyncStatus.SYNCED)
+                        uploaded++
+                        updateSyncItem(
+                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                            localFile = localFile,
+                            driveFileId = result.id,
+                            driveModifiedTime = result.modifiedTime,
+                            status = SyncStatus.SYNCED
+                        )
                     } else {
                         errors++
                         logger.log("[ERROR] 파일 업데이트(업로드) 실패: ${localFile.name}", folder.accountEmail)
@@ -484,7 +491,16 @@ class SyncManager internal constructor(
             isDriveUpdated -> {
                 if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
                     if (driveHelper.downloadFile(driveFile.id, localFile.absolutePath)) {
-                        downloaded++; updateSyncItem(existingItem ?: createSyncItem(folder, localFile, driveFile.id), localFile, driveFile.id, SyncStatus.SYNCED)
+                        downloaded++
+                        // Update local file's modification time to match Drive's for consistency, 
+                        // if the filesystem supports it. Otherwise, use the new local lastModified.
+                        updateSyncItem(
+                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                            localFile = localFile,
+                            driveFileId = driveFile.id,
+                            driveModifiedTime = driveFile.modifiedTime,
+                            status = SyncStatus.SYNCED
+                        )
                     } else {
                         errors++
                         logger.log("[ERROR] 파일 업데이트(다운로드) 실패: ${localFile.name}", folder.accountEmail)
@@ -569,13 +585,14 @@ class SyncManager internal constructor(
         existingItem: SyncItemEntity,
         localFile: File,
         driveFileId: String?,
+        driveModifiedTime: Long,
         status: SyncStatus
     ) {
         val updatedItem = existingItem.copy(
             driveFileId = driveFileId ?: existingItem.driveFileId,
             mimeType = getMimeType(localFile.name),
             localModifiedAt = localFile.lastModified(),
-            driveModifiedAt = System.currentTimeMillis(),
+            driveModifiedAt = driveModifiedTime,
             localSize = localFile.length(),
             driveSize = localFile.length(),
             status = status,
@@ -591,6 +608,7 @@ class SyncManager internal constructor(
         folder: SyncFolderEntity,
         localFile: File,
         driveFileId: String?,
+        driveModifiedTime: Long,
         status: SyncStatus
     ) {
         val item = SyncItemEntity(
@@ -603,7 +621,7 @@ class SyncManager internal constructor(
             fileName = localFile.name,
             mimeType = getMimeType(localFile.name),
             localModifiedAt = localFile.lastModified(),
-            driveModifiedAt = System.currentTimeMillis(),
+            driveModifiedAt = driveModifiedTime,
             localSize = localFile.length(),
             driveSize = localFile.length(),
             status = status,

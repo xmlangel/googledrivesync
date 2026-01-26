@@ -42,6 +42,14 @@ fun DashboardScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val versionName = remember {
+        try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            packageInfo.versionName ?: "Unknown"
+        } catch (e: Exception) {
+            "Unknown"
+        }
+    }
     
     val syncFolders by database.syncFolderDao()
         .getSyncFoldersByAccount(accountId)
@@ -79,7 +87,7 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Google Drive Sync v1.0.11") },
+                title = { Text("Google Drive Sync v$versionName") },
                 actions = {
                     Row(
                         modifier = Modifier.padding(end = 4.dp),

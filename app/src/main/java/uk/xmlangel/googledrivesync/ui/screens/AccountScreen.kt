@@ -109,7 +109,7 @@ fun AccountScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Google Drive Sync") },
+                title = { Text("Google Drive Sync v1.0.9") },
                 actions = {
                     IconButton(onClick = { /* Already on Account screen */ }) {
                         Icon(Icons.Default.AccountCircle, "계정")

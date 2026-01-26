@@ -264,4 +264,198 @@ class SyncManagerTest {
         assertEquals("Current index should be 1", 1, lastProgress.currentIndex)
         println("  Verified syncProgress updates: totalFiles=${lastProgress.totalFiles}, currentIndex=${lastProgress.currentIndex}")
     }
+
+    @Test
+    fun `syncFolder skips when no changes`() = runBlocking {
+        println("Testing syncFolder skips unchanged files...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        // Mock a file that exists locally and on Drive, and is already tracked in DB
+        val localFile = File(context.cacheDir, "skip_test.txt")
+        localFile.writeText("content")
+        val fixedTime = 1000000L
+        localFile.setLastModified(fixedTime)
+        
+        val driveItems = listOf(
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-1", localFile.name, "text/plain", fixedTime + 5000, 100L, emptyList(), false)
+        )
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
+        
+        val existingItem = SyncItemEntity(
+            id = "item-id",
+            syncFolderId = folderId,
+            accountId = "acc-id",
+            accountEmail = "test@example.com",
+            localPath = localFile.absolutePath,
+            driveFileId = "drive-id-1",
+            fileName = localFile.name,
+            mimeType = "text/plain",
+            localModifiedAt = localFile.lastModified(),
+            driveModifiedAt = driveItems[0].modifiedTime,
+            localSize = localFile.length(),
+            driveSize = 100L,
+            status = SyncStatus.SYNCED,
+            lastSyncedAt = fixedTime
+        )
+        
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Success)
+        val success = result as SyncResult.Success
+        assertEquals("Should have 1 skipped file", 1, success.skipped)
+        assertEquals("Should have 0 uploaded files", 0, success.uploaded)
+        assertEquals("Should have 0 downloaded files", 0, success.downloaded)
+        
+        // Verify no Drive API updates/downloads were called
+        coVerify(exactly = 0) { mockDriveHelper.updateFile(any(), any(), any()) }
+        coVerify(exactly = 0) { mockDriveHelper.downloadFile(any(), any()) }
+        
+        println("  Verified that syncFolder skipped the unchanged file correctly.")
+    }
+
+    @Test
+    fun `syncFolder links existing files without sync`() = runBlocking {
+        println("Testing syncFolder linking identical existing files (v1.0.8 logic)...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        // Mock a file that exists locally and on Drive, but NOT tracked in DB
+        val localFile = File(context.cacheDir, "link_test.txt")
+        localFile.writeText("content")
+        val fixedTime = 2000000L
+        localFile.setLastModified(fixedTime)
+        
+        val driveItems = listOf(
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-link", localFile.name, "text/plain", fixedTime + 100, localFile.length(), emptyList(), false)
+        )
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
+        
+        // NOT in DB
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
+        coEvery { mockSyncItemDao.insertSyncItem(any()) } just Runs
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Success)
+        val success = result as SyncResult.Success
+        assertEquals("Should have 1 skipped (linked) file", 1, success.skipped)
+        assertEquals("Should have 0 uploaded files", 0, success.uploaded)
+        
+        // Verify linking occurred (trackSyncItem was called internally via the sync logic)
+        coVerify { mockSyncItemDao.insertSyncItem(match { 
+            it.localPath == localFile.absolutePath && it.driveFileId == "drive-id-link" 
+        }) }
+        
+        // Verify no Drive API updates/downloads
+        coVerify(exactly = 0) { mockDriveHelper.updateFile(any(), any(), any()) }
+        coVerify(exactly = 0) { mockDriveHelper.downloadFile(any(), any()) }
+        
+        println("  Verified that syncFolder linked identical untracked files without syncing.")
+    }
+
+    @Test
+    fun `syncFolder links by size even if timestamps differ greatly`() = runBlocking {
+        println("Testing v1.0.9 size-based linking for new items...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        // Mock a file that exists locally and on Drive, but NOT tracked in DB
+        // Sizes match but timestamps are very different (minutes apart)
+        val localFile = File(context.cacheDir, "size_link_test.txt")
+        localFile.writeText("content")
+        localFile.setLastModified(1000000000L)
+        
+        val driveItems = listOf(
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-size", localFile.name, "text/plain", 2000000000L, localFile.length(), emptyList(), false)
+        )
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
+        coEvery { mockSyncItemDao.insertSyncItem(any()) } just Runs
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Success)
+        val success = result as SyncResult.Success
+        assertEquals("Should have 1 skipped (linked) file due to size match", 1, success.skipped)
+        
+        // Verify linking occurred based on size
+        coVerify { mockSyncItemDao.insertSyncItem(match { it.driveSize == localFile.length() }) }
+        println("  Verified that syncFolder linked files with matching size despite large timestamp difference.")
+    }
+
+    @Test
+    fun `syncFolder swallows metadata update if sizes match`() = runBlocking {
+        println("Testing v1.0.9 metadata swallowing for existing items...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        // Existing item in DB
+        val localFile = File(context.cacheDir, "swallow_test.txt")
+        localFile.writeText("content")
+        localFile.setLastModified(3000000000L) // Newer than DB
+        
+        val driveItems = listOf(
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-swallow", localFile.name, "text/plain", 4000000000L, localFile.length(), emptyList(), false)
+        )
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
+        
+        val existingItem = SyncItemEntity(
+            id = "item-id",
+            syncFolderId = folderId,
+            accountId = "acc-id",
+            accountEmail = "test@example.com",
+            localPath = localFile.absolutePath,
+            driveFileId = "drive-id-swallow",
+            fileName = localFile.name,
+            mimeType = "text/plain",
+            localModifiedAt = 2000000000L, // Older than current local
+            driveModifiedAt = 2000000000L, // Older than current drive
+            localSize = localFile.length(),
+            driveSize = localFile.length(),
+            status = SyncStatus.SYNCED,
+            lastSyncedAt = 2000000000L
+        )
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        coEvery { mockSyncItemDao.updateSyncItem(any()) } just Runs
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Success)
+        val success = result as SyncResult.Success
+        assertEquals("Should have 1 skipped (swallowed) file", 1, success.skipped)
+        
+        // Verify metadata update happened in DB but NO Drive API calls
+        coVerify { mockSyncItemDao.updateSyncItem(any()) }
+        coVerify(exactly = 0) { mockDriveHelper.updateFile(any(), any(), any()) }
+        coVerify(exactly = 0) { mockDriveHelper.downloadFile(any(), any()) }
+        
+        println("  Verified that syncFolder updated metadata only when sizes matched (swallowing).")
+    }
 }

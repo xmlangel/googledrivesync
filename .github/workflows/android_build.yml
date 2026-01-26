@@ -47,13 +47,18 @@ jobs:
 
         # Find and upload each XML file
         # Results are usually in app/build/test-results/testDebugUnitTest/
-        find app/build/test-results -name "*.xml" | while read -r file; do
-          echo "Uploading $file..."
-          curl -X POST "$TESTCASECRAFT_SERVER_URL/api/junit-results/upload?projectId=${TESTCASECRAFT_PROJECT_ID}&executionName=GitHub_Action_$(date +%Y%m%d_%H%M%S)" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: multipart/form-data" \
-            -F "file=@$file"
-        done
+        if [ -n "$TESTCASECRAFT_SERVER_URL" ] && [ "$TESTCASECRAFT_SERVER_URL" != "null" ]; then
+          find app/build/test-results -name "*.xml" | while read -r file; do
+            echo "Uploading $file..."
+            curl -X POST "$TESTCASECRAFT_SERVER_URL/api/junit-results/upload?projectId=${TESTCASECRAFT_PROJECT_ID}&executionName=GitHub_Action_$(date +%Y%m%d_%H%M%S)" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: multipart/form-data" \
+              -F "file=@$file"
+          done
+        else
+          echo "TESTCASECRAFT_SERVER_URL not set, skipping upload."
+        fi
+      continue-on-error: true
 
   build:
     needs: test
@@ -99,16 +104,19 @@ jobs:
 
     - name: Combine Release Notes
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
+        VERSION="${{ github.ref_name }}"
         REPO_URL="${{ github.server_url }}/${{ github.repository }}"
         KR_NOTES="Docs/release_notes_${VERSION}.md"
         EN_NOTES="Docs/release_notes_${VERSION}_en.md"
         
         echo "# Release $VERSION" > combined_notes.md
+        echo "Processing release notes for version: $VERSION"
         
         if [ -f "$KR_NOTES" ]; then
+          echo "Found Korean notes at $KR_NOTES"
           cat "$KR_NOTES" >> combined_notes.md
         else
+          echo "WARNING: Korean release notes not found at $KR_NOTES"
           echo "## [Korean]" >> combined_notes.md
           echo "Korean release notes not found in this tag. You can find them here: [Korean Release Notes]($REPO_URL/blob/main/$KR_NOTES)" >> combined_notes.md
         fi
@@ -116,8 +124,10 @@ jobs:
         echo -e "\n\n" >> combined_notes.md
         
         if [ -f "$EN_NOTES" ]; then
+          echo "Found English notes at $EN_NOTES"
           cat "$EN_NOTES" >> combined_notes.md
         else
+          echo "WARNING: English release notes not found at $EN_NOTES"
           echo "## [English]" >> combined_notes.md
           echo "English release notes not found in this tag. You can find them here: [English Release Notes]($REPO_URL/blob/main/$EN_NOTES)" >> combined_notes.md
         fi

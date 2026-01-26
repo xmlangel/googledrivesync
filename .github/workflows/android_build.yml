@@ -30,9 +30,9 @@ jobs:
     - name: Upload JUnit Results
       if: always()
       env:
-        TEST_USERNAME: ${{ secrets.TEST_SERVER_USERNAME }}
-        TEST_PASSWORD: ${{ secrets.TEST_SERVER_PASSWORD }}
-        PROJECT_ID: ${{ secrets.TEST_PROJECT_ID }}
+        TEST_USERNAME: ${{ secrets.TESTCASECRAFT_SERVER_USERNAME }}
+        TEST_PASSWORD: ${{ secrets.TESTCASECRAFT_SERVER_PASSWORD }}
+        PROJECT_ID: ${{ secrets.TESTCASECRAFT_PROJECT_ID }}
         SERVER_URL: https://testcasecraft.xmlangel.uk
       run: |
         # Login to get JWT Token

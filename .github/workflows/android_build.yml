@@ -27,6 +27,30 @@ jobs:
     - name: Run Tests
       run: ./gradlew test
 
+    - name: Upload JUnit Results
+      if: always()
+      run: |
+        # Login to get JWT Token
+        TOKEN=$(curl -s -X POST "http://192.168.1.156:8080/api/auth/login" \
+          -H "Content-Type: application/json" \
+          -d '{"username": "github", "password": "github123"}' | jq -r '.accessToken')
+        
+        if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
+          echo "Failed to retrieve authentication token"
+          exit 1
+        fi
+
+        # Find and upload each XML file
+        # Results are usually in app/build/test-results/testDebugUnitTest/
+        PROJECT_ID="21da74a2-1e08-47ea-9a57-66cf21438adf"
+        find app/build/test-results -name "*.xml" | while read -r file; do
+          echo "Uploading $file..."
+          curl -X POST "http://192.168.1.156:8080/api/junit-results/upload?projectId=${PROJECT_ID}&executionName=GitHub_Action_$(date +%Y%m%d_%H%M%S)" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: multipart/form-data" \
+            -F "file=@$file"
+        done
+
   build:
     needs: test
     runs-on: ubuntu-latest

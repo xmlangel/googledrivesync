@@ -29,8 +29,11 @@ description: 애플리케이션 버전 관리 및 태깅 프로세스
     }
     ```
 
-4. `DashboardScreen.kt` (또는 앱 UI에서 버전 정보를 표시하는 곳)의 버전 문자열을 업데이트합니다.
-    - 예: `Text("Google Drive Sync v1.1.0")`
+4. **Major 또는 Minor 버전 업데이트 시** 릴리즈 노트를 작성합니다.
+   - `Docs/` 폴더에 `release_notes_vX.Y.Z.md` (한국어) 및 `release_notes_vX.Y.Z_en.md` (영어) 파일을 생성합니다.
+   - 상세 규칙은 [.agent/workflows/release-notes.md](file:///Users/dicky/kmdata/git/googledrivesync/.agent/workflows/release-notes.md)를 따릅니다.
+
+5. `DashboardScreen.kt` (또는 앱 UI에서 버전 정보를 표시하는 곳)의 버전 문자열이 동적으로 관리되는지 확인합니다.
 
 ## Git 태깅 (Tagging)
 

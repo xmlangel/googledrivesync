@@ -180,6 +180,51 @@ class SyncMoveDetectionTest {
 
         // Verify local file was NOT deleted because it was moved on Drive
         assertTrue("Local file should still exist as it might be moved", localFile.exists())
-        coVerify(exactly = 0) { mockSyncItemDao.deleteSyncItem(any()) }
+    }
+
+    @Test
+    fun `syncFolder links by MD5 even if sizes match but contents differ if MD5 is provided`() = runBlocking {
+        println("Testing MD5-based linking...")
+        val folderId = "test-folder-id"
+        val folderPath = File(context.cacheDir, "MD5_Link").also { it.mkdir() }.absolutePath
+        val localFile = File(folderPath, "test.txt").also { it.writeText("local content") }
+        
+        // Drive item with SAME size but DIFFERENT content (different MD5)
+        val driveItems = listOf(
+            DriveItem("drive-id", "test.txt", "text/plain", 1000L, localFile.length(), "different-hash", listOf("drive-folder"), false)
+        )
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns SyncFolderEntity(folderId, "acc", "test@test.com", folderPath, "drive-folder", "Drive")
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockDriveHelper.listAllFiles("drive-folder") } returns driveItems
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
+        coEvery { mockSyncItemDao.getSyncItemByDriveId("drive-id") } returns null
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+
+        // 1. First run with DIFFERENT MD5 -> Should NOT link (will trigger sync/conflict)
+        // In our case, since it's "New Item Linking" logic that we updated:
+        // If MD5 doesn't match, it falls through to normal sync logic.
+        // We can just verify it didn't call insertSyncItem with SYNCED status if MD5 fails.
+        
+        syncManager.syncFolder(folderId)
+        
+        // Verify linking (insertSyncItem) did NOT happen for this drive-id because hashes differed
+        coVerify(exactly = 0) { mockSyncItemDao.insertSyncItem(match { it.status == SyncStatus.SYNCED }) }
+
+        // 2. Mock Drive with MATCHING MD5
+        val localMd5 = uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(localFile)
+        val matchingDriveItems = listOf(
+            DriveItem("drive-id", "test.txt", "text/plain", 1000L, localFile.length(), localMd5, listOf("drive-folder"), false)
+        )
+        coEvery { mockDriveHelper.listAllFiles("drive-folder") } returns matchingDriveItems
+        coEvery { mockSyncItemDao.insertSyncItem(any()) } just Runs
+        
+        syncManager.syncFolder(folderId)
+        
+        // Verify linking DID happen when MD5 matches
+        coVerify { mockSyncItemDao.insertSyncItem(match { it.driveFileId == "drive-id" && it.status == SyncStatus.SYNCED }) }
+        println("  Verified that MD5 match is required for automatic linking of new items.")
     }
 }

@@ -536,11 +536,14 @@ class SyncManager internal constructor(
         
         // v1.0.9: New Item Linking - If sizes match exactly, link without sync
         if (existingItem == null && localSize == driveSize) {
-            val statusMsg = "기존 파일 연결 (Size Match): ${localFile.name}"
-            logger.log(statusMsg, folder.accountEmail)
-            currentStatusMessage = statusMsg
-            trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
-            return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+            val localMd5 = uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(localFile)
+            if (localMd5 != null && localMd5 == driveFile.md5Checksum) {
+                val statusMsg = "기존 파일 연결 (MD5 Match): ${localFile.name}"
+                logger.log(statusMsg, folder.accountEmail)
+                currentStatusMessage = statusMsg
+                trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
+                return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+            }
         }
 
         // v1.0.9: Existing Item Swallowing - If both sides match DB size, just update metadata

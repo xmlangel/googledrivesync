@@ -54,6 +54,9 @@ class SyncManagerTest {
         MockKAnnotations.init(this)
         context = ApplicationProvider.getApplicationContext()
         
+        mockkObject(uk.xmlangel.googledrivesync.util.FileUtils)
+        every { uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(any()) } returns "test-md5"
+        
         // Setup SyncManager with mocked dependencies
         syncManager = SyncManager(
             context = context,
@@ -65,6 +68,9 @@ class SyncManagerTest {
             syncPreferences = mockSyncPreferences,
             logger = mockLogger
         )
+        
+        // Default mocks
+        every { mockSyncPreferences.defaultConflictResolution } returns null
     }
 
     @Test
@@ -341,7 +347,7 @@ class SyncManagerTest {
         localFile.setLastModified(fixedTime)
         
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-link", localFile.name, "text/plain", fixedTime + 100, localFile.length(), null, emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-link", localFile.name, "text/plain", fixedTime + 100, localFile.length(), "test-md5", emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         
@@ -387,7 +393,7 @@ class SyncManagerTest {
         localFile.setLastModified(1000000000L)
         
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-size", localFile.name, "text/plain", 2000000000L, localFile.length(), null, emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-size", localFile.name, "text/plain", 2000000000L, localFile.length(), "test-md5", emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
@@ -523,16 +529,67 @@ class SyncManagerTest {
     }
 
     @Test
-    fun `syncFolder logs with ERROR prefix when folder not found`() = runBlocking {
-        println("Testing error logging when folder is not found...")
-        val folderId = "non-existent-id"
-        
-        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns null
-        
-        syncManager.syncFolder(folderId)
-        
-        // Verify that logger was called with the specific error message containing [ERROR]
-        verify { mockLogger.log(match { it.contains("[ERROR]") && it.contains("찾을 수 없음") }, any()) }
-        println("  Verified [ERROR] prefix was logged when folder not found.")
+    fun `syncFolder logs with ERROR prefix when folder not found`() {
+        runBlocking {
+            println("Testing error logging when folder is not found...")
+            val folderId = "non-existent-id"
+            
+            coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns null
+            
+            syncManager.syncFolder(folderId)
+            
+            // Verify that logger was called with the specific error message containing [ERROR]
+            verify { mockLogger.log(match { it.contains("[ERROR]") && it.contains("찾을 수 없음") }, any()) }
+            println("  Verified [ERROR] prefix was logged when folder not found.")
+        }
+    }
+
+    @Test
+    fun `syncFolder stashes new local files in pendingUploads`() {
+        runBlocking {
+            println("Testing stashing of new local files in pendingUploads...")
+            val folderId = "test-folder-id"
+            // Setup folder as BIDIRECTIONAL to allow upload detection (which should now stage)
+            val folder = SyncFolderEntity(
+                folderId, "acc-id", "test@example.com", 
+                context.cacheDir.absolutePath, "drive-id", "Drive",
+                syncDirection = uk.xmlangel.googledrivesync.data.model.SyncDirection.BIDIRECTIONAL
+            )
+            
+            coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+            every { mockDriveHelper.initializeDriveService(any()) } returns true
+            coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+            coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+            coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+            
+            // Mock a new local file
+            val localFile = File(context.cacheDir, "new_file.txt")
+            localFile.writeText("new content")
+            
+            // No files on Drive
+            coEvery { mockDriveHelper.listAllFiles(any()) } returns emptyList()
+            coEvery { mockSyncItemDao.getSyncItemByLocalPath(any()) } returns null
+            
+            syncManager.syncFolder(folderId)
+            
+            // Verify it was added to pendingUploads
+            val pendingUploads = syncManager.pendingUploads.value
+            assertEquals("Should have 1 pending upload", 1, pendingUploads.size)
+            assertEquals("Pending upload should be our new file", localFile.absolutePath, pendingUploads[0].localFile.absolutePath)
+            assertTrue("Should be marked as a new file", pendingUploads[0].isNewFile)
+            
+            // Verify no immediate upload was called
+            coVerify(exactly = 0) { mockDriveHelper.uploadFile(any(), any(), any()) }
+            
+            println("  Verified that the new local file was stashed in pendingUploads instead of being uploaded immediately.")
+            
+            // Cleanup
+            localFile.delete()
+        }
+    }
+
+    @org.junit.After
+    fun tearDown() {
+        unmockkObject(uk.xmlangel.googledrivesync.util.FileUtils)
     }
 }

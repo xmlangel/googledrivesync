@@ -65,9 +65,12 @@ fun DashboardScreen(
     val syncProgress by syncManager.syncProgress.collectAsState()
     val lastSyncResult by syncManager.lastSyncResult.collectAsState()
     val pendingConflicts by syncManager.pendingConflicts.collectAsState()
+    val pendingUploads by syncManager.pendingUploads.collectAsState()
     
     var showConflictDialog by remember { mutableStateOf(false) }
     var currentConflict by remember { mutableStateOf<SyncConflict?>(null) }
+    
+    var showUploadDialog by remember { mutableStateOf(false) }
     
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -87,6 +90,12 @@ fun DashboardScreen(
         if (pendingConflicts.isNotEmpty()) {
             currentConflict = pendingConflicts.first()
             showConflictDialog = true
+        }
+    }
+
+    LaunchedEffect(pendingUploads) {
+        if (pendingUploads.isNotEmpty() && !isSyncing) {
+            showUploadDialog = true
         }
     }
     
@@ -298,6 +307,31 @@ fun DashboardScreen(
             onDismiss = { showConflictDialog = false }
         )
     }
+
+    // Upload Confirmation Dialog
+    if (showUploadDialog && pendingUploads.isNotEmpty()) {
+        UploadConfirmationDialog(
+            pendingUploads = pendingUploads,
+            onResolve = { pendingUpload, resolution ->
+                scope.launch {
+                    syncManager.resolvePendingUpload(pendingUpload, resolution)
+                }
+            },
+            onResolveAll = { resolution ->
+                scope.launch {
+                    val currentUploads = pendingUploads.toList()
+                    currentUploads.forEach { upload ->
+                        syncManager.resolvePendingUpload(upload, resolution)
+                    }
+                    showUploadDialog = false
+                }
+            },
+            onDismiss = { 
+                showUploadDialog = false
+                syncManager.dismissPendingUploads()
+            }
+        )
+    }
 }
 
 @Composable
@@ -473,6 +507,95 @@ fun ConflictDialog(
                         Text("건너뛰기")
                     }
                 }
+            }
+        }
+    )
+}
+
+@Composable
+fun UploadConfirmationDialog(
+    pendingUploads: List<uk.xmlangel.googledrivesync.sync.PendingUpload>,
+    onResolve: (uk.xmlangel.googledrivesync.sync.PendingUpload, uk.xmlangel.googledrivesync.sync.PendingUploadResolution) -> Unit,
+    onResolveAll: (uk.xmlangel.googledrivesync.sync.PendingUploadResolution) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Upload,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("업로드 확인")
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "다음 파일들을 Google Drive에 업로드하시겠습니까?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "주의: 드라이브에 이미 동일한 이름의 파일이 있는 경우 중복 파일이 생성될 수 있습니다.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(pendingUploads) { upload ->
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = upload.localFile.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (upload.isNewFile) "새 파일" else "수정됨",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                IconButton(onClick = { onResolve(upload, uk.xmlangel.googledrivesync.sync.PendingUploadResolution.UPLOAD) }) {
+                                    Icon(Icons.Default.Check, "업로드", tint = MaterialTheme.colorScheme.primary)
+                                }
+                                IconButton(onClick = { onResolve(upload, uk.xmlangel.googledrivesync.sync.PendingUploadResolution.SKIP) }) {
+                                    Icon(Icons.Default.Close, "건너뛰기", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onResolveAll(uk.xmlangel.googledrivesync.sync.PendingUploadResolution.UPLOAD) }) {
+                Text("모두 업로드")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onResolveAll(uk.xmlangel.googledrivesync.sync.PendingUploadResolution.SKIP) }) {
+                Text("모두 건너뛰기")
             }
         }
     )

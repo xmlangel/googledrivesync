@@ -43,6 +43,9 @@ class SyncManager internal constructor(
     private val _pendingConflicts = MutableStateFlow<List<SyncConflict>>(emptyList())
     val pendingConflicts: StateFlow<List<SyncConflict>> = _pendingConflicts.asStateFlow()
 
+    private val _pendingUploads = MutableStateFlow<List<PendingUpload>>(emptyList())
+    val pendingUploads: StateFlow<List<PendingUpload>> = _pendingUploads.asStateFlow()
+
     private var currentFileIndex = AtomicInteger(0)
     private var totalSyncFiles = 0
     private var currentStatusMessage: String? = null
@@ -105,6 +108,10 @@ class SyncManager internal constructor(
 
     fun dismissLastResult() {
         _lastSyncResult.value = null
+    }
+
+    fun dismissPendingUploads() {
+        _pendingUploads.value = emptyList()
     }
 
     /**
@@ -181,6 +188,11 @@ class SyncManager internal constructor(
             errors = result.errors
             conflicts.addAll(result.conflicts)
             
+            // Add stashed uploads to pending list
+            if (result.pendingUploads.isNotEmpty()) {
+                _pendingUploads.value = _pendingUploads.value + result.pendingUploads
+            }
+            
             // Update history
             historyDao.completeHistory(
                 id = historyId,
@@ -197,9 +209,9 @@ class SyncManager internal constructor(
             
             logger.log("동기화 완료: 업로드=$uploaded, 다운로드=$downloaded, 스킵=$skipped, 에러=$errors, 충돌=${conflicts.size}", folder.accountEmail)
             
-            val syncResult = if (conflicts.isNotEmpty()) {
-                _pendingConflicts.value = conflicts
-                SyncResult.Conflict(conflicts)
+            val syncResult = if (conflicts.isNotEmpty() || _pendingUploads.value.isNotEmpty()) {
+                if (conflicts.isNotEmpty()) _pendingConflicts.value = conflicts
+                SyncResult.Conflict(conflicts) // We might need a new result type or just use Conflict if we want to show a dialog
             } else {
                 SyncResult.Success(uploaded, downloaded, skipped)
             }
@@ -217,6 +229,71 @@ class SyncManager internal constructor(
         }
     }
     
+    /**
+     * Resolve a pending upload with user's choice
+     */
+    suspend fun resolvePendingUpload(pendingUpload: PendingUpload, resolution: PendingUploadResolution): Boolean {
+        return try {
+            when (resolution) {
+                PendingUploadResolution.UPLOAD -> {
+                    val folder = syncFolderDao.getSyncFolderById(pendingUpload.folderId) ?: return false
+                    
+                    val result = if (pendingUpload.isNewFile) {
+                        driveHelper.uploadFile(
+                            pendingUpload.localFile.absolutePath,
+                            pendingUpload.localFile.name,
+                            pendingUpload.driveFolderId
+                        )
+                    } else {
+                        driveHelper.updateFile(
+                            pendingUpload.driveFileId!!,
+                            pendingUpload.localFile.absolutePath
+                        )
+                    }
+
+                    if (result != null) {
+                        if (pendingUpload.isNewFile) {
+                            trackSyncItem(
+                                folder,
+                                pendingUpload.localFile,
+                                result.id,
+                                result.modifiedTime,
+                                result.size,
+                                SyncStatus.SYNCED,
+                                result.md5Checksum
+                            )
+                        } else {
+                            val existingItem = syncItemDao.getSyncItemByDriveId(pendingUpload.driveFileId!!)
+                            if (existingItem != null) {
+                                updateSyncItem(
+                                    existingItem,
+                                    pendingUpload.localFile,
+                                    result.id,
+                                    result.modifiedTime,
+                                    result.size,
+                                    SyncStatus.SYNCED,
+                                    result.md5Checksum
+                                )
+                            }
+                        }
+                        // Remove from pending list
+                        _pendingUploads.value = _pendingUploads.value.filter { it != pendingUpload }
+                        true
+                    } else {
+                        false
+                    }
+                }
+                PendingUploadResolution.SKIP -> {
+                    _pendingUploads.value = _pendingUploads.value.filter { it != pendingUpload }
+                    true
+                }
+            }
+        } catch (e: Exception) {
+            logger.log("[ERROR] 업로드 승인 처리 실패: ${pendingUpload.localFile.name}", pendingUpload.accountEmail)
+            false
+        }
+    }
+
     /**
      * Resolve a conflict with user's choice
      */
@@ -404,6 +481,7 @@ class SyncManager internal constructor(
                 skipped += subResult.skipped
                 errors += subResult.errors
                 conflicts.addAll(subResult.conflicts)
+                // Recursive items will be added in the final step of syncFolder
             } else {
                 // File Sync
                 if (localFile != null) {
@@ -413,6 +491,8 @@ class SyncManager internal constructor(
                     skipped += syncResult.skipped
                     errors += syncResult.errors
                     conflicts.addAll(syncResult.conflicts)
+                    // Collecting pending uploads from processFilePair
+                    _pendingUploads.value = _pendingUploads.value + syncResult.pendingUploads
                 } else if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
                     val sanitizedName = uk.xmlangel.googledrivesync.util.FileUtils.sanitizeFileName(driveFile.name)
                     val statusMsg = "새 파일 다운로드: $sanitizedName"
@@ -480,35 +560,41 @@ class SyncManager internal constructor(
                     val statusMsg = "새 폴더 업로드: ${localFile.name}"
                     logger.log(statusMsg, folder.accountEmail)
                     currentStatusMessage = statusMsg
-                    val created = driveHelper.createFolder(localFile.name, driveFolderId)
-                    if (created != null) {
-                        val subLocalItems = scanLocalFolder(localFile.absolutePath)
-                        val subResult = syncDirectoryRecursive(folder, localFile.absolutePath, created.id, subLocalItems, emptyList())
-                        uploaded += subResult.uploaded; downloaded += subResult.downloaded
-                        skipped += subResult.skipped; errors += subResult.errors
-                        conflicts.addAll(subResult.conflicts)
-                    } else {
-                        errors++; logger.log("[ERROR] 폴더 업로드 실패: ${localFile.name}", folder.accountEmail)
-                    }
-                } else skipped++
-            } else {
-                // New Local File
-                if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                    val statusMsg = "새 파일 업로드: ${localFile.name}"
-                    logger.log(statusMsg, folder.accountEmail)
-                    currentStatusMessage = statusMsg
-                    val result = driveHelper.uploadFile(localFile.absolutePath, localFile.name, driveFolderId)
-                    if (result != null) {
-                        uploaded++
-                        trackSyncItem(folder, localFile, result.id, result.modifiedTime, result.size, SyncStatus.SYNCED, result.md5Checksum)
-                    } else {
-                        errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name}", folder.accountEmail)
-                    }
-                } else skipped++
+                        val created = driveHelper.createFolder(localFile.name, driveFolderId)
+                        if (created != null) {
+                            val subLocalItems = scanLocalFolder(localFile.absolutePath)
+                            val subResult = syncDirectoryRecursive(folder, localFile.absolutePath, created.id, subLocalItems, emptyList())
+                            uploaded += subResult.uploaded; downloaded += subResult.downloaded
+                            skipped += subResult.skipped; errors += subResult.errors
+                            conflicts.addAll(subResult.conflicts)
+                            // Collector for pending sub-uploads
+                            _pendingUploads.value = _pendingUploads.value + subResult.pendingUploads
+                        } else {
+                            errors++; logger.log("[ERROR] 폴더 업로드 실패: ${localFile.name}", folder.accountEmail)
+                        }
+                    } else skipped++
+                } else {
+                    // New Local File
+                    if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                        val statusMsg = "업로드 대기: ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
+                        
+                        // Instead of uploading, add to pending list
+                        val pendingUpload = PendingUpload(
+                            folderId = folder.id,
+                            localFile = localFile,
+                            driveFolderId = driveFolderId,
+                            isNewFile = true,
+                            accountEmail = folder.accountEmail
+                        )
+                        _pendingUploads.value = _pendingUploads.value + pendingUpload
+                        skipped++ 
+                    } else skipped++
+                }
             }
+            return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, emptyList()) // We use _pendingUploads directly now
         }
-        return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts)
-    }
 
     private suspend fun processFilePair(
         folder: SyncFolderEntity,
@@ -589,25 +675,19 @@ class SyncManager internal constructor(
             }
             isLocalUpdated -> {
                 if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                    val statusMsg = "파일 업로드: ${localFile.name}"
+                    val statusMsg = "업로드 대기 (수정됨): ${localFile.name}"
                     logger.log(statusMsg, folder.accountEmail)
                     currentStatusMessage = statusMsg
-                    val result = driveHelper.updateFile(existingItem?.driveFileId ?: driveFile.id, localFile.absolutePath)
-                    if (result != null) {
-                        uploaded++
-                        updateSyncItem(
-                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id, driveFile.md5Checksum),
-                            localFile = localFile,
-                            driveFileId = result.id,
-                            driveModifiedTime = result.modifiedTime,
-                            driveSize = result.size,
-                            status = SyncStatus.SYNCED,
-                            md5Checksum = result.md5Checksum
-                        )
-                    } else {
-                        errors++
-                        logger.log("[ERROR] 파일 업데이트(업로드) 실패: ${localFile.name}", folder.accountEmail)
-                    }
+                    
+                    val pendingUpload = PendingUpload(
+                        folderId = folder.id,
+                        localFile = localFile,
+                        driveFolderId = driveFile.id, // Re-using driveFile.id for consistency, but updateFile needs it
+                        isNewFile = false,
+                        driveFileId = existingItem?.driveFileId ?: driveFile.id,
+                        accountEmail = folder.accountEmail
+                    )
+                    return RecursiveSyncResult(0, 0, 1, 0, emptyList(), listOf(pendingUpload))
                 } else skipped++
             }
             isDriveUpdated -> {
@@ -636,7 +716,7 @@ class SyncManager internal constructor(
             }
             else -> skipped++
         }
-        return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts)
+        return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, emptyList())
     }
 
     private data class RecursiveSyncResult(
@@ -644,7 +724,8 @@ class SyncManager internal constructor(
         val downloaded: Int,
         val skipped: Int,
         val errors: Int,
-        val conflicts: List<SyncConflict>
+        val conflicts: List<SyncConflict>,
+        val pendingUploads: List<PendingUpload> = emptyList()
     )
 
     /**

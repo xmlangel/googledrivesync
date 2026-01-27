@@ -10,9 +10,27 @@ object FileUtils {
      */
     fun sanitizeFileName(name: String): String {
         if (name.isBlank()) return "_"
-        
-        // Replace restricted characters with '_'
-        // Using a regex to match: \ / : * ? " < > | or anything from \u0000 to \u001F
         return name.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_")
+    }
+
+    /**
+     * Calculates the MD5 checksum of a file.
+     */
+    fun calculateMd5(file: java.io.File): String? {
+        if (!file.exists() || file.isDirectory) return null
+        return try {
+            val md = java.security.MessageDigest.getInstance("MD5")
+            val buffer = ByteArray(8192)
+            file.inputStream().use { input ->
+                var bytesRead = input.read(buffer)
+                while (bytesRead != -1) {
+                    md.update(buffer, 0, bytesRead)
+                    bytesRead = input.read(buffer)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            null
+        }
     }
 }

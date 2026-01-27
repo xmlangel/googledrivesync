@@ -41,6 +41,7 @@ data class SyncItemEntity(
     val driveModifiedAt: Long,
     val localSize: Long,
     val driveSize: Long,
+    val md5Checksum: String? = null,
     val status: SyncStatus = SyncStatus.PENDING_UPLOAD,
     val lastSyncedAt: Long = 0,
     val errorMessage: String? = null

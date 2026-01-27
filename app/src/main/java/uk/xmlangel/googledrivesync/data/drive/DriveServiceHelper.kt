@@ -304,6 +304,7 @@ private fun DriveFile.toDriveItem(): DriveItem {
         mimeType = mimeType,
         modifiedTime = modifiedTime?.value ?: 0L,
         size = getSize()?.toLong() ?: 0L,
+        md5Checksum = md5Checksum,
         parentIds = parents ?: emptyList(),
         isFolder = mimeType == DriveServiceHelper.MIME_TYPE_FOLDER
     )
@@ -318,6 +319,7 @@ data class DriveItem(
     val mimeType: String,
     val modifiedTime: Long,
     val size: Long,
+    val md5Checksum: String? = null,
     val parentIds: List<String>,
     val isFolder: Boolean
 )

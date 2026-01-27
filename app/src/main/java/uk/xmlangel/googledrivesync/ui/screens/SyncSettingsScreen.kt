@@ -179,6 +179,31 @@ fun SyncSettingsScreen(
                     onClick = { showConflictResolutionDialog = true }
                 )
             }
+            
+            // App Info Section
+            val versionInfo = remember {
+                try {
+                    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                    val name = packageInfo.versionName ?: "Unknown"
+                    val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        packageInfo.longVersionCode
+                    } else {
+                        @Suppress("DEPRECATION")
+                        packageInfo.versionCode.toLong()
+                    }
+                    "$name ($code)"
+                } catch (e: Exception) {
+                    "Unknown"
+                }
+            }
+            
+            SettingsSection(title = "앱 정보") {
+                SettingsInfoItem(
+                    icon = Icons.Default.Info,
+                    title = "버전",
+                    subtitle = versionInfo
+                )
+            }
         }
     }
     
@@ -362,6 +387,38 @@ fun SettingsClickItem(
                 Icons.Default.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsInfoItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

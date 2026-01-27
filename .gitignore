@@ -39,3 +39,7 @@ Thumbs.db
 # Secrets and Local Props
 local.properties
 google-services.json
+
+# Documentation generated files
+Docs/**/*.html
+Docs/**/libs/

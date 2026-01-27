@@ -16,6 +16,26 @@ data class SyncConflict(
 )
 
 /**
+ * Information for a file that is pending upload confirmation
+ */
+data class PendingUpload(
+    val folderId: String,
+    val localFile: java.io.File,
+    val driveFolderId: String,
+    val isNewFile: Boolean,
+    val driveFileId: String? = null,
+    val accountEmail: String
+)
+
+/**
+ * User's choice for pending upload
+ */
+enum class PendingUploadResolution {
+    UPLOAD,
+    SKIP
+}
+
+/**
  * User's choice for conflict resolution
  */
 enum class ConflictResolution {
@@ -56,5 +76,6 @@ data class SyncProgress(
     val totalFiles: Int,
     val bytesTransferred: Long,
     val totalBytes: Long,
-    val isUploading: Boolean
+    val isUploading: Boolean,
+    val statusMessage: String? = null
 )

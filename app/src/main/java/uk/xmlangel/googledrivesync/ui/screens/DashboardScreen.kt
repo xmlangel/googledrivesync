@@ -42,10 +42,16 @@ fun DashboardScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val versionName = remember {
+    val versionInfo = remember {
         try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "Unknown"
+            val name = packageInfo.versionName ?: "Unknown"
+            val code = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                packageInfo.versionCode.toLong()
+            }
+            "v$name ($code)"
         } catch (e: Exception) {
             "Unknown"
         }
@@ -87,7 +93,7 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Google Drive Sync v$versionName") },
+                title = { Text("Google Drive Sync $versionInfo") },
                 actions = {
                     Row(
                         modifier = Modifier.padding(end = 4.dp),
@@ -196,6 +202,13 @@ fun DashboardScreen(
                             text = currentProgress.currentFile,
                             style = MaterialTheme.typography.bodyMedium
                         )
+                        currentProgress.statusMessage?.let { status ->
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         LinearProgressIndicator(
                             progress = { 

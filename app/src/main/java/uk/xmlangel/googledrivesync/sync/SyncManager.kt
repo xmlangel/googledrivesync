@@ -45,6 +45,7 @@ class SyncManager internal constructor(
 
     private var currentFileIndex = AtomicInteger(0)
     private var totalSyncFiles = 0
+    private var currentStatusMessage: String? = null
 
     companion object {
         @Volatile
@@ -313,7 +314,8 @@ class SyncManager internal constructor(
                 totalFiles = totalSyncFiles,
                 bytesTransferred = 0,
                 totalBytes = driveFile.size,
-                isUploading = false
+                isUploading = false,
+                statusMessage = currentStatusMessage
             )
 
             // Try to find the local counterpart
@@ -324,9 +326,11 @@ class SyncManager internal constructor(
             if (localFile != null && localFile.name != driveFile.name) {
                 val sanitizedNewName = uk.xmlangel.googledrivesync.util.FileUtils.sanitizeFileName(driveFile.name)
                 val newLocalFile = File(localFile.parent, sanitizedNewName)
-                logger.log("이름 변경 감지 (Drive): ${localFile.name} -> $sanitizedNewName", folder.accountEmail)
-                
                 val oldPath = localFile.absolutePath
+                val statusMsg = "이름 변경 감지 (Drive): ${localFile.name} -> $sanitizedNewName"
+                logger.log(statusMsg, folder.accountEmail)
+                currentStatusMessage = statusMsg
+                
                 if (localFile.renameTo(newLocalFile)) {
                     handledLocalPaths.add(oldPath) // Old path is now handled/gone
                     localFile = newLocalFile
@@ -345,10 +349,11 @@ class SyncManager internal constructor(
                 val potentialMatch = localMap[driveFile.name]
                 if (potentialMatch != null && !handledLocalPaths.contains(potentialMatch.absolutePath)) {
                     val potentialItem = syncItemDao.getSyncItemByLocalPath(potentialMatch.absolutePath)
-                    // If local file is not linked to anything else, link it
                     if (potentialItem == null || potentialItem.driveFileId == null) {
                         localFile = potentialMatch
-                        logger.log("기존 로컬 파일 연결: ${driveFile.name}", folder.accountEmail)
+                        val statusMsg = "기존 로컬 파일 연결: ${driveFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
                     }
                 }
             }
@@ -366,7 +371,9 @@ class SyncManager internal constructor(
                 
                 if (!dir.exists()) {
                     if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
-                        logger.log("폴더 생성: ${driveFile.name}", folder.accountEmail)
+                        val statusMsg = "폴더 생성: ${driveFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
                         dir.mkdirs()
                     } else {
                         skipped++; continue
@@ -399,7 +406,9 @@ class SyncManager internal constructor(
                     conflicts.addAll(syncResult.conflicts)
                 } else if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
                     val sanitizedName = uk.xmlangel.googledrivesync.util.FileUtils.sanitizeFileName(driveFile.name)
-                    logger.log("새 파일 다운로드: $sanitizedName", folder.accountEmail)
+                    val statusMsg = "새 파일 다운로드: $sanitizedName"
+                    logger.log(statusMsg, folder.accountEmail)
+                    currentStatusMessage = statusMsg
                     val destPath = File(localPath, sanitizedName).absolutePath
                     if (driveHelper.downloadFile(driveFile.id, destPath)) {
                         downloaded++
@@ -425,7 +434,8 @@ class SyncManager internal constructor(
                 totalFiles = totalSyncFiles,
                 bytesTransferred = 0,
                 totalBytes = localFile.length(),
-                isUploading = true
+                isUploading = true,
+                statusMessage = currentStatusMessage
             )
 
             val existingItem = syncItemDao.getSyncItemByLocalPath(localFile.absolutePath)
@@ -446,7 +456,9 @@ class SyncManager internal constructor(
             } else if (localFile.isDirectory) {
                 // New Local Folder
                 if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                    logger.log("새 폴더 업로드: ${localFile.name}", folder.accountEmail)
+                    val statusMsg = "새 폴더 업로드: ${localFile.name}"
+                    logger.log(statusMsg, folder.accountEmail)
+                    currentStatusMessage = statusMsg
                     val created = driveHelper.createFolder(localFile.name, driveFolderId)
                     if (created != null) {
                         val subLocalItems = scanLocalFolder(localFile.absolutePath)
@@ -461,7 +473,9 @@ class SyncManager internal constructor(
             } else {
                 // New Local File
                 if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                    logger.log("새 파일 업로드: ${localFile.name}", folder.accountEmail)
+                    val statusMsg = "새 파일 업로드: ${localFile.name}"
+                    logger.log(statusMsg, folder.accountEmail)
+                    currentStatusMessage = statusMsg
                     val result = driveHelper.uploadFile(localFile.absolutePath, localFile.name, driveFolderId)
                     if (result != null) {
                         uploaded++
@@ -501,7 +515,9 @@ class SyncManager internal constructor(
         
         // v1.0.9: New Item Linking - If sizes match exactly, link without sync
         if (existingItem == null && localSize == driveSize) {
-            logger.log("기존 파일 연결 (Size Match): ${localFile.name}", folder.accountEmail)
+            val statusMsg = "기존 파일 연결 (Size Match): ${localFile.name}"
+            logger.log(statusMsg, folder.accountEmail)
+            currentStatusMessage = statusMsg
             trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED)
             return RecursiveSyncResult(0, 0, 1, 0, emptyList())
         }
@@ -509,7 +525,9 @@ class SyncManager internal constructor(
         // v1.0.9: Existing Item Swallowing - If both sides match DB size, just update metadata
         if (existingItem != null && localSize == existingItem.localSize && driveSize == existingItem.driveSize) {
             if (isLocalUpdated || isDriveUpdated) {
-                logger.log("크기 일치 (내용 변화 없음): ${localFile.name} - 메타데이터만 업데이트", folder.accountEmail)
+                val statusMsg = "크기 일치 (내용 변화 없음): ${localFile.name}"
+                logger.log("$statusMsg - 메타데이터만 업데이트", folder.accountEmail)
+                currentStatusMessage = statusMsg
                 updateSyncItem(existingItem, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED)
             }
             return RecursiveSyncResult(0, 0, 1, 0, emptyList())
@@ -547,6 +565,9 @@ class SyncManager internal constructor(
             }
             isLocalUpdated -> {
                 if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                    val statusMsg = "파일 업로드: ${localFile.name}"
+                    logger.log(statusMsg, folder.accountEmail)
+                    currentStatusMessage = statusMsg
                     val result = driveHelper.updateFile(existingItem?.driveFileId ?: driveFile.id, localFile.absolutePath)
                     if (result != null) {
                         uploaded++
@@ -566,6 +587,9 @@ class SyncManager internal constructor(
             }
             isDriveUpdated -> {
                 if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                    val statusMsg = "파일 다운로드: ${localFile.name}"
+                    logger.log(statusMsg, folder.accountEmail)
+                    currentStatusMessage = statusMsg
                     if (driveHelper.downloadFile(driveFile.id, localFile.absolutePath)) {
                         downloaded++
                         // Update local file's modification time to match Drive's for consistency, 

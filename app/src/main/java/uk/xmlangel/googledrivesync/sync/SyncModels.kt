@@ -56,5 +56,6 @@ data class SyncProgress(
     val totalFiles: Int,
     val bytesTransferred: Long,
     val totalBytes: Long,
-    val isUploading: Boolean
+    val isUploading: Boolean,
+    val statusMessage: String? = null
 )

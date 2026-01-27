@@ -234,7 +234,7 @@ class SyncManagerTest {
         
         // Mock 1 file in Drive
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("id1", "file1.txt", "text/plain", 1000L, 100L, emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("id1", "file1.txt", "text/plain", 1000L, 100L, null, emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         coEvery { mockDriveHelper.downloadFile(any(), any()) } returns true
@@ -284,7 +284,7 @@ class SyncManagerTest {
         localFile.setLastModified(fixedTime)
         
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-1", localFile.name, "text/plain", fixedTime + 5000, 100L, emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-1", localFile.name, "text/plain", fixedTime + 5000, 100L, null, emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         
@@ -341,7 +341,7 @@ class SyncManagerTest {
         localFile.setLastModified(fixedTime)
         
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-link", localFile.name, "text/plain", fixedTime + 100, localFile.length(), emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-link", localFile.name, "text/plain", fixedTime + 100, localFile.length(), null, emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         
@@ -387,7 +387,7 @@ class SyncManagerTest {
         localFile.setLastModified(1000000000L)
         
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-size", localFile.name, "text/plain", 2000000000L, localFile.length(), emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-size", localFile.name, "text/plain", 2000000000L, localFile.length(), null, emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
@@ -423,7 +423,7 @@ class SyncManagerTest {
         localFile.setLastModified(3000000000L) // Newer than DB
         
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-swallow", localFile.name, "text/plain", 4000000000L, localFile.length(), emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-swallow", localFile.name, "text/plain", 4000000000L, localFile.length(), null, emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         
@@ -480,7 +480,7 @@ class SyncManagerTest {
         
         // 2. Drive has same ID but NEW name
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-rename", "new_name.txt", "text/plain", fixedTime, oldLocalFile.length(), emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-rename", "new_name.txt", "text/plain", fixedTime, oldLocalFile.length(), null, emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         

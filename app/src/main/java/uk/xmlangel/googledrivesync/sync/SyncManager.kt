@@ -322,25 +322,34 @@ class SyncManager internal constructor(
             var localFile = driveIdToLocalItem[driveFile.id]
             var existingItem = if (localFile != null) syncItemDao.getSyncItemByLocalPath(localFile.absolutePath) else syncItemDao.getSyncItemByDriveId(driveFile.id)
 
-            // Detect Rename/Move (Same ID, different name/path)
-            if (localFile != null && localFile.name != driveFile.name) {
-                val sanitizedNewName = uk.xmlangel.googledrivesync.util.FileUtils.sanitizeFileName(driveFile.name)
-                val newLocalFile = File(localFile.parent, sanitizedNewName)
-                val oldPath = localFile.absolutePath
-                val statusMsg = "이름 변경 감지 (Drive): ${localFile.name} -> $sanitizedNewName"
-                logger.log(statusMsg, folder.accountEmail)
-                currentStatusMessage = statusMsg
-                
-                if (localFile.renameTo(newLocalFile)) {
-                    handledLocalPaths.add(oldPath) // Old path is now handled/gone
-                    localFile = newLocalFile
-                    existingItem = existingItem?.copy(
-                        localPath = newLocalFile.absolutePath,
-                        fileName = sanitizedNewName
-                    )
-                    existingItem?.let { syncItemDao.updateSyncItem(it) }
-                } else {
-                    logger.log("[ERROR] 로컬 이름 변경 실패: ${localFile.name}", folder.accountEmail)
+            // Detect Move/Rename (Same ID, different path/name)
+            if (existingItem != null && existingItem.driveFileId == driveFile.id) {
+                val currentLocalPath = File(localPath, driveFile.name).absolutePath
+                if (existingItem.localPath != currentLocalPath) {
+                    val oldLocalFile = File(existingItem.localPath)
+                    if (oldLocalFile.exists()) {
+                        val sanitizedNewName = uk.xmlangel.googledrivesync.util.FileUtils.sanitizeFileName(driveFile.name)
+                        val newLocalFile = File(localPath, sanitizedNewName)
+                        
+                        val statusMsg = "이름/위치 변경 감지 (Drive): ${oldLocalFile.name} -> $sanitizedNewName"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
+                        
+                        if (oldLocalFile.renameTo(newLocalFile)) {
+                            handledLocalPaths.add(existingItem.localPath)
+                            localFile = newLocalFile
+                            existingItem = existingItem.copy(
+                                localPath = newLocalFile.absolutePath,
+                                fileName = sanitizedNewName
+                            )
+                            syncItemDao.updateSyncItem(existingItem)
+                        } else {
+                            logger.log("[ERROR] 로컬 이동 실패: ${oldLocalFile.name}", folder.accountEmail)
+                        }
+                    } else if (localFile != null && localFile.name != driveFile.name) {
+                        // Rename within the same folder (if oldPath doesn't exist but localFile does)
+                        // This case is actually mostly covered by the above, but kept for robustness
+                    }
                 }
             }
 
@@ -412,7 +421,7 @@ class SyncManager internal constructor(
                     val destPath = File(localPath, sanitizedName).absolutePath
                     if (driveHelper.downloadFile(driveFile.id, destPath)) {
                         downloaded++
-                        trackSyncItem(folder, File(destPath), driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED)
+                        trackSyncItem(folder, File(destPath), driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
                     } else {
                         errors++; logger.log("[ERROR] 다운로드 실패: $sanitizedName", folder.accountEmail)
                     }
@@ -441,17 +450,29 @@ class SyncManager internal constructor(
             val existingItem = syncItemDao.getSyncItemByLocalPath(localFile.absolutePath)
             
             if (existingItem?.driveFileId != null && !handledDriveIds.contains(existingItem.driveFileId)) {
-                // Item exists in DB but not on Drive -> Deleted on Drive
-                if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                // Item exists in DB but not on Drive in THIS folder.
+                // It might have been moved or deleted.
+                try {
+                    val driveFileMeta = driveHelper.getFileMetadata(existingItem.driveFileId!!)
+                    if (driveFileMeta.parentIds.contains(driveFolderId)) {
+                        // Still in this folder but trashed? Or just missing from list?
+                        logger.log("드라이브에서 삭제됨 감지: ${localFile.name}", folder.accountEmail)
+                        if (localFile.delete()) {
+                            syncItemDao.deleteSyncItem(existingItem)
+                        }
+                    } else {
+                        // Moved to another folder!
+                        logger.log("이동 감지 (Drive): ${localFile.name} -> 다른 폴더로 이동됨", folder.accountEmail)
+                        // Don't delete local file. The scan of the other folder will handle it.
+                        // Just remove DB entry for THIS path if we want to be clean, 
+                        // but updating it in Case A is better.
+                    }
+                } catch (e: Exception) {
+                    // Not on Drive at all or error
                     logger.log("드라이브에서 삭제됨 감지: ${localFile.name}", folder.accountEmail)
                     if (localFile.delete()) {
                         syncItemDao.deleteSyncItem(existingItem)
-                        logger.log("로컬 파일 삭제 성공: ${localFile.name}", folder.accountEmail)
-                    } else {
-                        logger.log("[ERROR] 로컬 파일 삭제 실패: ${localFile.name}", folder.accountEmail)
                     }
-                } else {
-                    skipped++
                 }
             } else if (localFile.isDirectory) {
                 // New Local Folder
@@ -479,7 +500,7 @@ class SyncManager internal constructor(
                     val result = driveHelper.uploadFile(localFile.absolutePath, localFile.name, driveFolderId)
                     if (result != null) {
                         uploaded++
-                        trackSyncItem(folder, localFile, result.id, result.modifiedTime, result.size ?: 0L, SyncStatus.SYNCED)
+                        trackSyncItem(folder, localFile, result.id, result.modifiedTime, result.size, SyncStatus.SYNCED, result.md5Checksum)
                     } else {
                         errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name}", folder.accountEmail)
                     }
@@ -518,7 +539,7 @@ class SyncManager internal constructor(
             val statusMsg = "기존 파일 연결 (Size Match): ${localFile.name}"
             logger.log(statusMsg, folder.accountEmail)
             currentStatusMessage = statusMsg
-            trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED)
+            trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
             return RecursiveSyncResult(0, 0, 1, 0, emptyList())
         }
 
@@ -528,7 +549,7 @@ class SyncManager internal constructor(
                 val statusMsg = "크기 일치 (내용 변화 없음): ${localFile.name}"
                 logger.log("$statusMsg - 메타데이터만 업데이트", folder.accountEmail)
                 currentStatusMessage = statusMsg
-                updateSyncItem(existingItem, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED)
+                updateSyncItem(existingItem, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
             }
             return RecursiveSyncResult(0, 0, 1, 0, emptyList())
         }
@@ -572,12 +593,13 @@ class SyncManager internal constructor(
                     if (result != null) {
                         uploaded++
                         updateSyncItem(
-                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id, driveFile.md5Checksum),
                             localFile = localFile,
                             driveFileId = result.id,
                             driveModifiedTime = result.modifiedTime,
-                            driveSize = result.size ?: 0L,
-                            status = SyncStatus.SYNCED
+                            driveSize = result.size,
+                            status = SyncStatus.SYNCED,
+                            md5Checksum = result.md5Checksum
                         )
                     } else {
                         errors++
@@ -595,12 +617,13 @@ class SyncManager internal constructor(
                         // Update local file's modification time to match Drive's for consistency, 
                         // if the filesystem supports it. Otherwise, use the new local lastModified.
                         updateSyncItem(
-                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id, driveFile.md5Checksum),
                             localFile = localFile,
                             driveFileId = driveFile.id,
                             driveModifiedTime = driveFile.modifiedTime,
                             driveSize = driveFile.size,
-                            status = SyncStatus.SYNCED
+                            status = SyncStatus.SYNCED,
+                            md5Checksum = driveFile.md5Checksum
                         )
                     } else {
                         errors++
@@ -688,7 +711,8 @@ class SyncManager internal constructor(
         driveFileId: String?,
         driveModifiedTime: Long,
         driveSize: Long,
-        status: SyncStatus
+        status: SyncStatus,
+        md5Checksum: String? = null
     ) {
         val updatedItem = existingItem.copy(
             driveFileId = driveFileId ?: existingItem.driveFileId,
@@ -697,6 +721,7 @@ class SyncManager internal constructor(
             driveModifiedAt = driveModifiedTime,
             localSize = localFile.length(),
             driveSize = driveSize,
+            md5Checksum = md5Checksum ?: existingItem.md5Checksum,
             status = status,
             lastSyncedAt = System.currentTimeMillis()
         )
@@ -712,7 +737,8 @@ class SyncManager internal constructor(
         driveFileId: String?,
         driveModifiedTime: Long,
         driveSize: Long,
-        status: SyncStatus
+        status: SyncStatus,
+        md5Checksum: String? = null
     ) {
         val item = SyncItemEntity(
             id = UUID.randomUUID().toString(),
@@ -727,6 +753,7 @@ class SyncManager internal constructor(
             driveModifiedAt = driveModifiedTime,
             localSize = localFile.length(),
             driveSize = driveSize,
+            md5Checksum = md5Checksum,
             status = status,
             lastSyncedAt = System.currentTimeMillis()
         )
@@ -736,7 +763,8 @@ class SyncManager internal constructor(
     private fun createSyncItem(
         folder: SyncFolderEntity,
         localFile: File,
-        driveFileId: String?
+        driveFileId: String?,
+        md5Checksum: String? = null
     ): SyncItemEntity {
         return SyncItemEntity(
             id = UUID.randomUUID().toString(),
@@ -751,6 +779,7 @@ class SyncManager internal constructor(
             driveModifiedAt = 0L,
             localSize = localFile.length(),
             driveSize = 0,
+            md5Checksum = md5Checksum,
             status = SyncStatus.CONFLICT,
             lastSyncedAt = 0
         )

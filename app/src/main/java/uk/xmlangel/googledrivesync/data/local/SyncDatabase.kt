@@ -15,7 +15,7 @@ import uk.xmlangel.googledrivesync.data.model.SyncStatus
         SyncItemEntity::class,
         SyncHistoryEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

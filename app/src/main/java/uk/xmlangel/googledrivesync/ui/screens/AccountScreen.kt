@@ -70,24 +70,24 @@ fun AccountScreen(
                     // Let the LaunchedEffect below handle it when activeAccount state updates.
                 } else {
                     errorMessage = "로그인 정보를 가져올 수 없습니다."
-                    logger.log("구글 로그인 실패: account is null")
+                    logger.log("[ERROR] 구글 로그인 실패: account is null")
                 }
             } catch (e: ApiException) {
                 errorMessage = "로그인 실패: ${e.message} (Status Code: ${e.statusCode})"
-                logger.log("구글 로그인 API 오류: ${e.message}, code=${e.statusCode}")
+                logger.log("[ERROR] 구글 로그인 API 오류: ${e.message}, code=${e.statusCode}")
                 if (e.statusCode == 10) {
                     errorMessage += "\n(개발자 매개변수 오류: SHA-1이 Google Cloud Console에 등록되었는지 확인하세요)"
                 }
             } catch (e: Exception) {
                 errorMessage = "예기치 못한 오류가 발생했습니다: ${e.message}"
-                logger.log("구글 로그인 처리 중 오류: ${e.message}")
+                logger.log("[ERROR] 구글 로그인 처리 중 오류: ${e.message}")
                 e.printStackTrace()
             }
         } else if (result.resultCode == Activity.RESULT_CANCELED) {
             logger.log("구글 로그인 취소됨")
         } else {
             errorMessage = "로그인 과정에서 오류가 발생했습니다. (Result Code: ${result.resultCode})"
-            logger.log("구글 로그인 실패: resultCode=${result.resultCode}")
+            logger.log("[ERROR] 구글 로그인 실패: resultCode=${result.resultCode}")
         }
     }
 
@@ -140,7 +140,7 @@ fun AccountScreen(
                             } else {
                                 isLoading = false
                                 errorMessage = "로그아웃 실패: ${task.exception?.message}"
-                                logger.log("로그아웃 실패: ${task.exception?.message}")
+                                logger.log("[ERROR] 로그아웃 실패: ${task.exception?.message}")
                             }
                         }
                     }

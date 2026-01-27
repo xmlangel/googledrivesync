@@ -36,10 +36,19 @@ Room 데이터베이스의 쿼리 신뢰성과 데이터 정합성을 검증합�
 
 | 테스트 메서드 | 테스트 목적 | 검증 내용 |
 | :--- | :--- | :--- |
-| `insert and get sync folder` | 기본적인 CRUD 검증 | 폴더 정보를 삽입하고 ID를 통해 정확히 다시 조회할 수 있는지 확인 |
-| `getEnabledSyncFolders` | 필터링 쿼리 검증 | 활성화된 폴더(`isEnabled = 1`)만 정확히 리스트로 반환되는지 확인 |
-| `insert and count items by status` | 상태별 통계 쿼리 검증 | 동기화 완료된 파일과 오류 발생 파일의 개수를 각각 정확히 집계하는지 확인 |
 | `deleteFoldersByAccount` | 데이터 정리 로직 검증 | 특정 계정을 삭제할 때 해당 계정에 속한 모든 동기화 폴더 데이터가 삭제되는지 확인 |
+
+---
+
+## 4. DriveServiceHelperTest
+
+Google Drive API를 통한 파일 다운로드 및 유효성 검사 로직을 검증합니다.
+
+| 테스트 메서드 | 테스트 목적 | 검증 내용 |
+| :--- | :--- | :--- |
+| `downloadFile: 0-byte file` | 0바이트 파일 처리 검증 | 파일 크기가 0인 경우 API 호출 없이 로컬에 빈 파일 생성 확인 |
+| `downloadFile: Google Docs` | Google Docs 내보내기 검증 | Google Docs 타입 파일 시 `export` API를 호출하는지 확인 |
+| `downloadFile: Normal file` | 일반 파일 다운로드 검증 | 일반 바이너리 파일 시 표준 다운로드 API를 호출하는지 확인 |
 
 ---
 

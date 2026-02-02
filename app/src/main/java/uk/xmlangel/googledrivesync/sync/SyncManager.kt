@@ -219,9 +219,15 @@ class SyncManager internal constructor(
             return syncResult
             
         } catch (e: Exception) {
-            val errorResult = SyncResult.Error(e.message ?: "Unknown error", e)
+            val errorMessage = when (e) {
+                is java.net.UnknownHostException -> "네트워크 연결이 없거나 Google 서비스에 접속할 수 없습니다 (DNS 오류)"
+                is java.net.SocketTimeoutException -> "네트워크 응답 시간이 초과되었습니다"
+                is java.io.IOException -> "네트워크 또는 파일 I/O 오류: ${e.message}"
+                else -> e.message ?: "알 수 없는 오류"
+            }
+            val errorResult = SyncResult.Error(errorMessage, e)
             _lastSyncResult.value = errorResult
-            logger.log("[ERROR] 동기화 중 치명적 오류 발생: ${e.message}")
+            logger.log("[ERROR] 동기화 중 치명적 오류 발생: $errorMessage (${e.javaClass.simpleName})")
             return errorResult
         } finally {
             _isSyncing.value = false

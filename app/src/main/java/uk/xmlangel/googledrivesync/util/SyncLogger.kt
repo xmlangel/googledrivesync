@@ -30,7 +30,12 @@ class SyncLogger(private val context: Context) {
                 output.write(logEntry.toByteArray())
             }
             // Also output to Logcat for easier debugging
-            Log.d(TAG, accountTag + " " + message)
+            val fullMessage = accountTag + " " + message
+            if (message.startsWith("[ERROR]")) {
+                Log.e(TAG, fullMessage)
+            } else {
+                Log.d(TAG, fullMessage)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

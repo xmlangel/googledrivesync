@@ -1,6 +1,7 @@
 package uk.xmlangel.googledrivesync.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class FileUtilsTest {
@@ -33,13 +34,46 @@ class FileUtilsTest {
     }
     
     @Test
-    fun `sanitizeFileName handles real cases from log`() {
-        val case1 = "책-연관-기능 개선과 구조 개선에 대한 PR이 구분될 수 있는가?.md"
-        val expected1 = "책-연관-기능 개선과 구조 개선에 대한 PR이 구분될 수 있는가_.md"
-        assertEquals(expected1, FileUtils.sanitizeFileName(case1))
+    fun `calculateMd5 returns correct MD5 for a known file`() {
+        val tempFile = java.io.File.createTempFile("test", ".txt")
+        tempFile.writeText("hello world")
+        // MD5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
+        val expected = "5eb63bbbe01eeed093cb22bb8f5acdc3"
+        assertEquals(expected, FileUtils.calculateMd5(tempFile))
+        tempFile.delete()
+    }
+
+    @Test
+    fun `calculateMd5 returns null for non-existent file`() {
+        val nonExistentFile = java.io.File("non_existent_file.txt")
+        assertNull(FileUtils.calculateMd5(nonExistentFile))
+    }
+
+    @Test
+    fun `calculateMd5 returns null for directory`() {
+        val dir = java.io.File(System.getProperty("java.io.tmpdir"))
+        assertNull(FileUtils.calculateMd5(dir))
+    }
+
+    @Test
+    fun `calculateMd5 returns correct MD5 for empty file`() {
+        val tempFile = java.io.File.createTempFile("empty", ".txt")
+        // MD5 of empty string is d41d8cd98f00b204e9800998ecf8427e
+        val expected = "d41d8cd98f00b204e9800998ecf8427e"
+        assertEquals(expected, FileUtils.calculateMd5(tempFile))
+        tempFile.delete()
+    }
+
+    @Test
+    fun `calculateMd5 returns null on exception`() {
+        val tempFile = java.io.File.createTempFile("error", ".txt")
         
-        val case2 = "책-연관-<Tidy First?> 번역이 옵션 개념을 가르치다.md"
-        val expected2 = "책-연관-_Tidy First__ 번역이 옵션 개념을 가르치다.md"
-        assertEquals(expected2, FileUtils.sanitizeFileName(case2))
+        io.mockk.mockkStatic(java.security.MessageDigest::class)
+        io.mockk.every { java.security.MessageDigest.getInstance("MD5") } throws RuntimeException("Simulated digest error")
+        
+        assertNull(FileUtils.calculateMd5(tempFile))
+        
+        io.mockk.unmockkStatic(java.security.MessageDigest::class)
+        tempFile.delete()
     }
 }

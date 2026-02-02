@@ -1,7 +1,9 @@
 package uk.xmlangel.googledrivesync.ui.screens
 
+import android.app.Activity
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -59,6 +61,13 @@ fun DashboardScreen(
     var currentConflict by remember { mutableStateOf<SyncConflict?>(null) }
     
     var showUploadDialog by remember { mutableStateOf(false) }
+    var showExitDialog by remember { mutableStateOf(false) }
+    
+    // Intercept back button to move app to background
+    BackHandler {
+        val activity = context as? Activity
+        activity?.moveTaskToBack(true)
+    }
     
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -132,6 +141,16 @@ fun DashboardScreen(
                             modifier = Modifier.size(40.dp)
                         ) {
                             Icon(Icons.Default.List, "로그")
+                        }
+                        IconButton(
+                            onClick = { showExitDialog = true },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ExitToApp, 
+                                contentDescription = "앱 종료",
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 },
@@ -317,6 +336,78 @@ fun DashboardScreen(
             onDismiss = { 
                 showUploadDialog = false
                 syncManager.dismissPendingUploads()
+            }
+        )
+    }
+
+    // Exit Confirmation Dialog
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.ExitToApp,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("앱 종료 확인")
+                }
+            },
+            text = {
+                Column {
+                    Text("앱을 완전히 종료하시겠습니까?")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.secondary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "팁: '아니오'를 누르면 앱이 백그라운드에서 동기화를 계속 수행합니다. 뒤로가기 버튼을 눌러도 백그라운드로 전환됩니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val activity = context as? Activity
+                        activity?.finish()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("예 (완전 종료)")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showExitDialog = false
+                        val activity = context as? Activity
+                        activity?.moveTaskToBack(true)
+                    }
+                ) {
+                    Text("아니오 (백그라운드 유지)")
+                }
             }
         )
     }

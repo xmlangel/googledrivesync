@@ -34,6 +34,9 @@ interface SyncFolderDao {
     @Query("UPDATE sync_folders SET isEnabled = :enabled WHERE id = :folderId")
     suspend fun setFolderEnabled(folderId: String, enabled: Boolean)
 
+    @Query("UPDATE sync_folders SET lastStartPageToken = :pageToken WHERE id = :folderId")
+    suspend fun updatePageToken(folderId: String, pageToken: String)
+
     @Query("SELECT MAX(lastSyncedAt) FROM sync_folders WHERE accountId = :accountId")
     suspend fun getMaxLastSyncTimeByAccount(accountId: String): Long?
 

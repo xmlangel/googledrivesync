@@ -20,6 +20,7 @@ data class SyncFolderEntity(
     val syncDirection: SyncDirection = SyncDirection.BIDIRECTIONAL,
     val isEnabled: Boolean = true,
     val lastSyncedAt: Long = 0,
+    val lastStartPageToken: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 

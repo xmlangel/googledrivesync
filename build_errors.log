@@ -11,9 +11,7 @@ The current default is 'true'.
 > Task :app:parseDebugLocalResources UP-TO-DATE
 > Task :app:generateDebugRFile UP-TO-DATE
 > Task :app:kspDebugKotlin UP-TO-DATE
-> Task :app:compileDebugKotlin UP-TO-DATE
 > Task :app:javaPreCompileDebug UP-TO-DATE
-> Task :app:compileDebugJavaWithJavac NO-SOURCE
 > Task :app:checkDebugAarMetadata UP-TO-DATE
 > Task :app:compileDebugNavigationResources UP-TO-DATE
 > Task :app:mapDebugSourceSetPaths UP-TO-DATE
@@ -24,24 +22,31 @@ The current default is 'true'.
 > Task :app:processDebugManifest UP-TO-DATE
 > Task :app:processDebugManifestForPackage UP-TO-DATE
 > Task :app:processDebugResources UP-TO-DATE
-> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
-> Task :app:kspDebugUnitTestKotlin UP-TO-DATE
 > Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:packageDebugUnitTestForUnitTest UP-TO-DATE
+> Task :app:processDebugUnitTestManifest UP-TO-DATE
+> Task :app:generateDebugUnitTestConfig UP-TO-DATE
 
-> Task :app:compileDebugUnitTestKotlin FAILED
-e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/test/java/uk/xmlangel/googledrivesync/sync/SyncManagerTest.kt:710:13 No value passed for parameter 'mimeType'.
-e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/test/java/uk/xmlangel/googledrivesync/sync/SyncManagerTest.kt:710:13 No value passed for parameter 'localModifiedAt'.
-e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/test/java/uk/xmlangel/googledrivesync/sync/SyncManagerTest.kt:710:13 No value passed for parameter 'driveModifiedAt'.
-e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/test/java/uk/xmlangel/googledrivesync/sync/SyncManagerTest.kt:710:13 No value passed for parameter 'localSize'.
-e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/test/java/uk/xmlangel/googledrivesync/sync/SyncManagerTest.kt:710:13 No value passed for parameter 'driveSize'.
-e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/test/java/uk/xmlangel/googledrivesync/sync/SyncManagerTest.kt:717:77 Argument type mismatch: actual type is 'File', but 'DriveItem' was expected.
+> Task :app:compileDebugKotlin FAILED
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:163:60 Argument type mismatch: actual type is 'Int', but 'String' was expected.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:163:66 Argument type mismatch: actual type is 'String', but 'Int' was expected.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:163:66 No value passed for parameter 'bytesTransferred'.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:163:66 No value passed for parameter 'totalBytes'.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:163:66 No value passed for parameter 'isUploading'.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:174:78 Unresolved reference 'errors'.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:1045:70 Too many arguments for 'constructor(uploaded: Int, downloaded: Int, skipped: Int): SyncResult.Success'.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:1045:78 Too many arguments for 'constructor(uploaded: Int, downloaded: Int, skipped: Int): SyncResult.Success'.
+e: file:///Users/dicky/kmdata/git/googledrivesync/app/src/main/java/uk/xmlangel/googledrivesync/sync/SyncManager.kt:1045:89 Too many arguments for 'constructor(uploaded: Int, downloaded: Int, skipped: Int): SyncResult.Success'.
 
 [Incubating] Problems report is available at: file:///Users/dicky/kmdata/git/googledrivesync/build/reports/problems/problems-report.html
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
-Execution failed for task ':app:compileDebugUnitTestKotlin'.
+Execution failed for task ':app:compileDebugKotlin'.
 > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
    > Compilation error. See log for more details
 
@@ -58,4 +63,4 @@ You can use '--warning-mode all' to show the individual deprecation warnings and
 For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
 
 BUILD FAILED in 1s
-21 actionable tasks: 1 executed, 20 up-to-date
+23 actionable tasks: 1 executed, 22 up-to-date

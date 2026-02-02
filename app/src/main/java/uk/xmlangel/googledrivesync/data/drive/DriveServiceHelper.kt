@@ -113,6 +113,33 @@ class DriveServiceHelper(private val context: Context) {
     }
 
     /**
+     * Get the starting page token for Changes API
+     */
+    suspend fun getStartPageToken(): String? = withContext(Dispatchers.IO) {
+        try {
+            getDrive().changes().getStartPageToken().execute().startPageToken
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Get changes since a specific page token
+     */
+    suspend fun getChanges(pageToken: String): DriveChangeResult = withContext(Dispatchers.IO) {
+        val result = getDrive().changes().list(pageToken)
+            .setFields("nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, modifiedTime, size, parents, md5Checksum))")
+            .execute()
+        
+        DriveChangeResult(
+            changes = result.changes?.map { it.toDriveChange() } ?: emptyList(),
+            nextPageToken = result.nextPageToken,
+            newStartPageToken = result.newStartPageToken
+        )
+    }
+
+    /**
      * Get file metadata
      */
     suspend fun getFileMetadata(fileId: String): DriveItem = withContext(Dispatchers.IO) {
@@ -311,3 +338,32 @@ data class DriveListResult(
     val files: List<DriveItem>,
     val nextPageToken: String?
 )
+
+/**
+ * Result of listing changes
+ */
+data class DriveChangeResult(
+    val changes: List<DriveChange>,
+    val nextPageToken: String?,
+    val newStartPageToken: String?
+)
+
+/**
+ * Individual change item
+ */
+data class DriveChange(
+    val fileId: String,
+    val removed: Boolean,
+    val file: DriveItem? = null
+)
+
+/**
+ * Extension to convert Drive API Change to DriveChange
+ */
+private fun com.google.api.services.drive.model.Change.toDriveChange(): DriveChange {
+    return DriveChange(
+        fileId = fileId,
+        removed = removed ?: false,
+        file = file?.toDriveItem()
+    )
+}

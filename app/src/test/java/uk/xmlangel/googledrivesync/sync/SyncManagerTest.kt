@@ -441,7 +441,7 @@ class SyncManagerTest {
         localFile.setLastModified(3000000000L) // Newer than DB
         
         val driveItems = listOf(
-            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-swallow", localFile.name, "text/plain", 4000000000L, localFile.length(), null, emptyList(), false)
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-swallow", localFile.name, "text/plain", 4000000000L, localFile.length(), "test-md5", emptyList(), false)
         )
         coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
         
@@ -795,6 +795,145 @@ class SyncManagerTest {
         // Let's verify logger was called with the error.
         verify { mockLogger.log(match { it.contains("치명적 오류 발생") && it.contains("DNS 오류") }, any()) }
         println("  Verified syncFolder caught fatal network error and returned appropriate SyncResult.Error.")
+        }
+    }
+    @Test
+    fun testSyncFolderUsesChangesApi() {
+        runBlocking {
+        println("Testing syncFolder uses Changes API when token is available...")
+        val folderId = "test-folder-id"
+        // Folder has a token!
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive", lastStartPageToken = "old-token")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        
+        // Mock a change: file-id-1 updated
+        val driveFile = uk.xmlangel.googledrivesync.data.drive.DriveItem("file-id-1", "test.txt", "text/plain", System.currentTimeMillis(), 100L, "new-md5", listOf("drive-id"), false)
+        val changes = listOf(uk.xmlangel.googledrivesync.data.drive.DriveChange("file-id-1", false, driveFile))
+        val changeResult = uk.xmlangel.googledrivesync.data.drive.DriveChangeResult(changes, null, "new-token")
+        
+        coEvery { mockDriveHelper.getChanges("old-token") } returns changeResult
+        
+        // Mock DB knows this item
+        val localFile = File(context.cacheDir, "test.txt")
+        localFile.writeText("old content")
+        val existingItem = SyncItemEntity(UUID.randomUUID().toString(), folderId, "acc-id", "test@example.com", localFile.absolutePath, "file-id-1", "test.txt", "text/plain", localFile.lastModified(), 0L, localFile.length(), 0L, "old-md5")
+        
+        coEvery { mockSyncItemDao.getSyncItemByDriveId("file-id-1") } returns existingItem
+        coEvery { mockDriveHelper.downloadFile(any(), any()) } returns true
+        coEvery { mockSyncItemDao.updateSyncItem(any()) } just Runs
+        coEvery { mockSyncFolderDao.updatePageToken(any(), any()) } just Runs
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Success)
+        coVerify { mockDriveHelper.getChanges("old-token") }
+        coVerify(exactly = 0) { mockDriveHelper.listAllFiles(any()) } 
+        coVerify { mockSyncFolderDao.updatePageToken(folderId, "new-token") }
+        println("  Verified syncFolder used Changes API and updated the token.")
+        localFile.delete()
+        }
+    }
+
+    @Test
+    fun testSyncFolderHandlesServerDeleteThroughChangesApi() {
+        runBlocking {
+        println("Testing syncFolder handles server deletion via Changes API...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive", lastStartPageToken = "old-token")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        
+        // Mock a change: file-id-del removed
+        val changes = listOf(uk.xmlangel.googledrivesync.data.drive.DriveChange("file-id-del", true, null))
+        val changeResult = uk.xmlangel.googledrivesync.data.drive.DriveChangeResult(changes, null, "new-token")
+        
+        coEvery { mockDriveHelper.getChanges("old-token") } returns changeResult
+        
+        // Mock DB knows this item
+        val localFile = File(context.cacheDir, "delete_me.txt")
+        localFile.writeText("to be deleted")
+        val existingItem = SyncItemEntity(UUID.randomUUID().toString(), folderId, "acc-id", "test@example.com", localFile.absolutePath, "file-id-del", "delete_me.txt", "text/plain", localFile.lastModified(), 0L, localFile.length(), 0L, "md5")
+        
+        coEvery { mockSyncItemDao.getSyncItemByDriveId("file-id-del") } returns existingItem
+        coEvery { mockSyncItemDao.deleteSyncItem(any()) } just Runs
+        coEvery { mockSyncFolderDao.updatePageToken(any(), any()) } just Runs
+        
+        syncManager.syncFolder(folderId)
+        
+        assertFalse("Local file should have been deleted", localFile.exists())
+        coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
+        println("  Verified server deletion was reflected locally via Changes API.")
+        }
+    }
+
+    @Test
+    fun testSyncFolderSkipsOnMd5Match() {
+        runBlocking {
+        println("Testing processFilePair skips sync when MD5 matches even if timestamps differ...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        val localFile = File(context.cacheDir, "md5_skip.txt")
+        localFile.writeText("same content")
+        val fixedMd5 = "constant-md5"
+        
+        // Mock FileUtils to return a fixed MD5
+        coEvery { uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(any()) } returns fixedMd5
+        
+        val driveFile = uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-1", localFile.name, "text/plain", System.currentTimeMillis() + 10000, localFile.length(), fixedMd5, listOf("drive-id"), false)
+        val existingItem = SyncItemEntity(UUID.randomUUID().toString(), folderId, "acc-id", "test@example.com", localFile.absolutePath, "drive-id-1", localFile.name, "text/plain", localFile.lastModified() - 10000, driveFile.modifiedTime - 10000, localFile.length(), localFile.length(), fixedMd5)
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns listOf(driveFile)
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(any()) } returns existingItem
+        coEvery { mockSyncItemDao.getSyncItemByDriveId(any()) } returns existingItem
+        coEvery { mockSyncItemDao.updateSyncItem(any()) } just Runs
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Success)
+        val success = result as SyncResult.Success
+        assertEquals("Should have 0 uploaded", 0, success.uploaded)
+        assertEquals("Should have 0 downloaded", 0, success.downloaded)
+        assertEquals("Should have 1 skipped", 1, success.skipped)
+        
+        // Verification: metadata was updated precisely once because modified times were different but MD5 was same
+        coVerify { mockSyncItemDao.updateSyncItem(match { it.md5Checksum == fixedMd5 }) }
+        println("  Verified that sync was skipped due to MD5 match despite timestamp drift.")
+        localFile.delete()
+        }
+    }
+
+    @Test
+    fun testSyncFolderUpdatesTokenAfterFullSync() {
+        runBlocking {
+        println("Testing syncFolder fetches and saves a Page Token after a full sync...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive", lastStartPageToken = null)
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns emptyList()
+        coEvery { mockDriveHelper.getStartPageToken() } returns "brand-new-token"
+        coEvery { mockSyncFolderDao.updatePageToken(any(), any()) } just Runs
+        
+        syncManager.syncFolder(folderId)
+        
+        coVerify { mockDriveHelper.getStartPageToken() }
+        coVerify { mockSyncFolderDao.updatePageToken(folderId, "brand-new-token") }
+        println("  Verified that Page Token was initialized after full sync.")
         }
     }
 

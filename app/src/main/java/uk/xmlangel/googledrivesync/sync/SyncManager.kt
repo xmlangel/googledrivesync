@@ -155,6 +155,41 @@ class SyncManager internal constructor(
             
             logger.log("동기화 시작: folderId=$folderId", folder.accountEmail)
             
+            // Phase 2: Attempt differential sync if token exists
+            if (folder.lastStartPageToken != null) {
+                try {
+                    val changesResult = syncChangesInternal(folder)
+                    if (changesResult.errors == 0 && changesResult.conflicts.isEmpty()) {
+                        _syncProgress.value = SyncProgress(
+                            currentFile = "차분 동기화 완료",
+                            currentIndex = 1,
+                            totalFiles = 1,
+                            bytesTransferred = 0,
+                            totalBytes = 0,
+                            isUploading = false,
+                            statusMessage = "동기화 완료 (차분)"
+                        )
+                        val successResult = SyncResult.Success(changesResult.uploaded, changesResult.downloaded, changesResult.skipped)
+                        _lastSyncResult.value = successResult
+                        syncFolderDao.updateLastSyncTime(folderId, System.currentTimeMillis())
+                        
+                        historyDao.completeHistory(
+                            id = historyId,
+                            completedAt = System.currentTimeMillis(),
+                            status = "SUCCESS_DIFF",
+                            uploaded = changesResult.uploaded,
+                            downloaded = changesResult.downloaded,
+                            skipped = changesResult.skipped,
+                            errors = changesResult.errors
+                        )
+                        return successResult
+                    }
+                    logger.log("차분 동기화 불완전 (에러=${changesResult.errors}, 충돌=${changesResult.conflicts.size}), 전체 스캔으로 전환", folder.accountEmail)
+                } catch (e: Exception) {
+                    logger.log("차분 동기화 중 예외 발생: ${e.message}", folder.accountEmail)
+                }
+            }
+            
             var uploaded = 0
             var downloaded = 0
             var skipped = 0
@@ -206,6 +241,17 @@ class SyncManager internal constructor(
             
             // Update folder last sync time
             syncFolderDao.updateLastSyncTime(folderId, System.currentTimeMillis())
+            
+            // Phase 2: Get and save the new start page token after full sync
+            try {
+                val newToken = driveHelper.getStartPageToken()
+                if (newToken != null) {
+                    syncFolderDao.updatePageToken(folder.id, newToken)
+                    logger.log("새 Page Token 저장됨: $newToken", folder.accountEmail)
+                }
+            } catch (e: Exception) {
+                logger.log("Page Token 획득 실패: ${e.message}", folder.accountEmail)
+            }
             
             logger.log("동기화 완료: 업로드=$uploaded, 다운로드=$downloaded, 스킵=$skipped, 에러=$errors, 충돌=${conflicts.size}", folder.accountEmail)
             
@@ -669,15 +715,18 @@ class SyncManager internal constructor(
             }
         }
 
-        // v1.0.9: Existing Item Swallowing - If both sides match DB size, just update metadata
+        // v1.0.9 + Phase 2: Content-based skipping (MD5 Match)
         if (existingItem != null && localSize == existingItem.localSize && driveSize == existingItem.driveSize) {
-            if (isLocalUpdated || isDriveUpdated) {
-                val statusMsg = "크기 일치 (내용 변화 없음): ${localFile.name}"
-                logger.log("$statusMsg - 메타데이터만 업데이트", folder.accountEmail)
-                currentStatusMessage = statusMsg
-                updateSyncItem(existingItem, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
+            val localMd5 = uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(localFile)
+            if (localMd5 != null && localMd5 == driveFile.md5Checksum) {
+                if (isLocalUpdated || isDriveUpdated) {
+                    val statusMsg = "내용 일치 (MD5 Match): ${localFile.name}"
+                    logger.log("$statusMsg - 메타데이터만 업데이트", folder.accountEmail)
+                    currentStatusMessage = statusMsg
+                    updateSyncItem(existingItem, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
+                }
+                return RecursiveSyncResult(0, 0, 1, 0, emptyList())
             }
-            return RecursiveSyncResult(0, 0, 1, 0, emptyList())
         }
         
         if (isLocalUpdated || isDriveUpdated) {
@@ -939,5 +988,70 @@ class SyncManager internal constructor(
     
     private fun getMimeType(fileName: String): String {
         return uk.xmlangel.googledrivesync.util.MimeTypeUtil.getMimeType(fileName)
+    }
+
+    /**
+     * Phase 2: Incremental sync using Changes API (Internal implementation)
+     */
+    private suspend fun syncChangesInternal(folder: SyncFolderEntity): RecursiveSyncResult {
+        val pageToken = folder.lastStartPageToken ?: return RecursiveSyncResult(0, 0, 0, 1, emptyList())
+        logger.log("차분 동기화 시작 (Token: $pageToken)", folder.accountEmail)
+        
+        var uploaded = 0; var downloaded = 0; var skipped = 0; var errors = 0
+        val conflicts = mutableListOf<SyncConflict>()
+        val pendingUploads = mutableListOf<PendingUpload>()
+        
+        try {
+            var currentPageToken = pageToken
+            var nextStartPageToken: String? = null
+            
+            do {
+                val result = driveHelper.getChanges(currentPageToken)
+                for (change in result.changes) {
+                    val driveFile = change.file
+                    val driveFileId = change.fileId
+                    
+                    if (change.removed) {
+                        val existingItem = syncItemDao.getSyncItemByDriveId(driveFileId)
+                        if (existingItem != null) {
+                            val localFile = File(existingItem.localPath)
+                            logger.log("서버 삭제 감지 (API): ${existingItem.fileName}", folder.accountEmail)
+                            if (localFile.exists() && localFile.delete()) {
+                                syncItemDao.deleteSyncItem(existingItem)
+                                skipped++
+                            }
+                        }
+                    } else if (driveFile != null) {
+                        val existingItem = syncItemDao.getSyncItemByDriveId(driveFileId)
+                        if (existingItem != null) {
+                            val localFile = File(existingItem.localPath)
+                            val pairResult = processFilePair(folder, localFile, driveFile, existingItem)
+                            uploaded += pairResult.uploaded; downloaded += pairResult.downloaded
+                            skipped += pairResult.skipped; errors += pairResult.errors
+                            conflicts.addAll(pairResult.conflicts)
+                            pendingUploads.addAll(pairResult.pendingUploads)
+                        } else if (driveFile.parentIds.contains(folder.driveFolderId)) {
+                            val localFile = File(folder.localPath, driveFile.name)
+                            val pairResult = processFilePair(folder, localFile, driveFile, null)
+                            uploaded += pairResult.uploaded; downloaded += pairResult.downloaded
+                            skipped += pairResult.skipped; errors += pairResult.errors
+                            conflicts.addAll(pairResult.conflicts)
+                            pendingUploads.addAll(pairResult.pendingUploads)
+                        }
+                    }
+                }
+                currentPageToken = result.nextPageToken ?: ""
+                nextStartPageToken = result.newStartPageToken
+            } while (currentPageToken.isNotEmpty())
+            
+            if (nextStartPageToken != null) {
+                syncFolderDao.updatePageToken(folder.id, nextStartPageToken)
+            }
+            
+            return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, pendingUploads)
+        } catch (e: Exception) {
+            logger.log("[ERROR] 차분 동기화 실패: ${e.message}", folder.accountEmail)
+            return RecursiveSyncResult(uploaded, downloaded, skipped, errors + 1, conflicts, pendingUploads)
+        }
     }
 }

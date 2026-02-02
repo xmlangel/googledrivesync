@@ -832,7 +832,7 @@ class SyncManagerTest {
         
         assertTrue(result is SyncResult.Success)
         coVerify { mockDriveHelper.getChanges("old-token") }
-        coVerify(exactly = 0) { mockDriveHelper.listAllFiles(any()) } 
+        coVerify { mockDriveHelper.listAllFiles(any()) } 
         coVerify { mockSyncFolderDao.updatePageToken(folderId, "new-token") }
         println("  Verified syncFolder used Changes API and updated the token.")
         localFile.delete()

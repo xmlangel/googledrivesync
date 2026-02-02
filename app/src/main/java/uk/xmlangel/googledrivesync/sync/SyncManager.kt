@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import uk.xmlangel.googledrivesync.data.local.*
@@ -155,46 +156,27 @@ class SyncManager internal constructor(
             
             logger.log("동기화 시작: folderId=$folderId", folder.accountEmail)
             
-            // Phase 2: Attempt differential sync if token exists
-            if (folder.lastStartPageToken != null) {
-                try {
-                    val changesResult = syncChangesInternal(folder)
-                    if (changesResult.errors == 0 && changesResult.conflicts.isEmpty()) {
-                        _syncProgress.value = SyncProgress(
-                            currentFile = "차분 동기화 완료",
-                            currentIndex = 1,
-                            totalFiles = 1,
-                            bytesTransferred = 0,
-                            totalBytes = 0,
-                            isUploading = false,
-                            statusMessage = "동기화 완료 (차분)"
-                        )
-                        val successResult = SyncResult.Success(changesResult.uploaded, changesResult.downloaded, changesResult.skipped)
-                        _lastSyncResult.value = successResult
-                        syncFolderDao.updateLastSyncTime(folderId, System.currentTimeMillis())
-                        
-                        historyDao.completeHistory(
-                            id = historyId,
-                            completedAt = System.currentTimeMillis(),
-                            status = "SUCCESS_DIFF",
-                            uploaded = changesResult.uploaded,
-                            downloaded = changesResult.downloaded,
-                            skipped = changesResult.skipped,
-                            errors = changesResult.errors
-                        )
-                        return successResult
-                    }
-                    logger.log("차분 동기화 불완전 (에러=${changesResult.errors}, 충돌=${changesResult.conflicts.size}), 전체 스캔으로 전환", folder.accountEmail)
-                } catch (e: Exception) {
-                    logger.log("차분 동기화 중 예외 발생: ${e.message}", folder.accountEmail)
-                }
-            }
-            
             var uploaded = 0
             var downloaded = 0
             var skipped = 0
             var errors = 0
             val conflicts = mutableListOf<SyncConflict>()
+            
+            // Phase 2: Attempt differential sync if token exists
+            if (folder.lastStartPageToken != null) {
+                try {
+                    val changesResult = syncChangesInternal(folder)
+                    uploaded += changesResult.uploaded
+                    downloaded += changesResult.downloaded
+                    skipped += changesResult.skipped
+                    errors += changesResult.errors
+                    conflicts.addAll(changesResult.conflicts)
+                    
+                    logger.log("차분 동기화 완료 (업로드=${changesResult.uploaded}, 다운로드=${changesResult.downloaded}, 에러=${changesResult.errors})", folder.accountEmail)
+                } catch (e: Exception) {
+                    logger.log("차분 동기화 중 예외 발생: ${e.message}", folder.accountEmail)
+                }
+            }
             
             // Get local files (now including folders)
             val localItems = try {
@@ -551,6 +533,20 @@ class SyncManager internal constructor(
                     localItems = subLocalItems,
                     driveItems = subDriveItems
                 )
+                
+                // Track folder record to enable effective differential sync for subfolders
+                if (existingItem == null) {
+                    trackSyncItem(
+                        folder, 
+                        dir, 
+                        driveFile.id, 
+                        driveFile.modifiedTime, 
+                        0L, 
+                        SyncStatus.SYNCED, 
+                        null
+                    )
+                }
+
                 uploaded += subResult.uploaded
                 downloaded += subResult.downloaded
                 skipped += subResult.skipped
@@ -646,6 +642,9 @@ class SyncManager internal constructor(
                     try {
                         val created = driveHelper.createFolder(localFile.name, driveFolderId)
                         if (created != null) {
+                            // Track folder record
+                            trackSyncItem(folder, localFile, created.id, created.modifiedTime, 0L, SyncStatus.SYNCED, null)
+                            
                             val subLocalItems = scanLocalFolder(localFile.absolutePath)
                             val subResult = syncDirectoryRecursive(folder, localFile.absolutePath, created.id, subLocalItems, emptyList())
                             uploaded += subResult.uploaded; downloaded += subResult.downloaded
@@ -1038,6 +1037,23 @@ class SyncManager internal constructor(
         val conflicts = mutableListOf<SyncConflict>()
         val pendingUploads = mutableListOf<PendingUpload>()
         
+        // Build set of all known folder IDs to check for descendants
+        val knownFolderIds = mutableSetOf(folder.driveFolderId)
+        
+        // Add all folders already tracked in the DB for this sync folder
+        // This ensures subfolders created in previous sessions are recognized
+        try {
+            val dbFolders = syncItemDao.getSyncItemsByFolder(folder.id).first()
+                .filter { it.mimeType == DriveServiceHelper.MIME_TYPE_FOLDER && it.driveFileId != null }
+                .map { it.driveFileId!! }
+            knownFolderIds.addAll(dbFolders)
+            if (dbFolders.isNotEmpty()) {
+                logger.log("차분 동기화: DB에서 ${dbFolders.size}개의 하위 폴더 로드됨", folder.accountEmail)
+            }
+        } catch (e: Exception) {
+            logger.log("차분 동기화 폴더 목록 로드 실패: ${e.message}", folder.accountEmail)
+        }
+        
         try {
             var currentPageToken = pageToken
             var nextStartPageToken: String? = null
@@ -1054,12 +1070,24 @@ class SyncManager internal constructor(
                             if (existingItem != null) {
                                 val localFile = File(existingItem.localPath)
                                 logger.log("서버 삭제 감지 (API): ${existingItem.fileName}", folder.accountEmail)
-                                if (localFile.exists() && localFile.delete()) {
+                                if (localFile.exists() ) {
+                                    if (localFile.isDirectory) {
+                                        localFile.deleteRecursively()
+                                    } else {
+                                        localFile.delete()
+                                    }
                                     syncItemDao.deleteSyncItem(existingItem)
                                     skipped++
                                 }
                             }
                         } else if (driveFile != null) {
+                            if (driveFile.isFolder) {
+                                // Potentially add to known folders if it's within our sync hierarchy
+                                if (driveFile.parentIds.any { it in knownFolderIds }) {
+                                    knownFolderIds.add(driveFile.id)
+                                }
+                            }
+
                             val existingItem = syncItemDao.getSyncItemByDriveId(driveFileId)
                             if (existingItem != null) {
                                 val localFile = File(existingItem.localPath)
@@ -1068,13 +1096,32 @@ class SyncManager internal constructor(
                                 skipped += pairResult.skipped; errors += pairResult.errors
                                 conflicts.addAll(pairResult.conflicts)
                                 pendingUploads.addAll(pairResult.pendingUploads)
-                            } else if (driveFile.parentIds.contains(folder.driveFolderId)) {
-                                val localFile = File(folder.localPath, driveFile.name)
-                                val pairResult = processFilePair(folder, localFile, driveFile, null)
-                                uploaded += pairResult.uploaded; downloaded += pairResult.downloaded
-                                skipped += pairResult.skipped; errors += pairResult.errors
-                                conflicts.addAll(pairResult.conflicts)
-                                pendingUploads.addAll(pairResult.pendingUploads)
+                            } else if (driveFile.parentIds.any { it in knownFolderIds }) {
+                                // Match by parent: it's a new item in a known folder
+                                // We need to find the local path for this parent
+                                val parentId = driveFile.parentIds.firstOrNull { it in knownFolderIds }
+                                val parentPath = if (parentId == folder.driveFolderId) {
+                                    folder.localPath
+                                } else {
+                                    syncItemDao.getSyncItemByDriveId(parentId!!)?.localPath
+                                }
+                                
+                                if (parentPath != null) {
+                                    val localFile = File(parentPath, driveFile.name)
+                                    val pairResult = if (driveFile.isFolder) {
+                                        // It's a new folder, create it
+                                        if (!localFile.exists()) localFile.mkdirs()
+                                        trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, 0L, SyncStatus.SYNCED, null)
+                                        knownFolderIds.add(driveFile.id)
+                                        RecursiveSyncResult(0, 0, 1, 0, emptyList())
+                                    } else {
+                                        processFilePair(folder, localFile, driveFile, null)
+                                    }
+                                    uploaded += pairResult.uploaded; downloaded += pairResult.downloaded
+                                    skipped += pairResult.skipped; errors += pairResult.errors
+                                    conflicts.addAll(pairResult.conflicts)
+                                    pendingUploads.addAll(pairResult.pendingUploads)
+                                }
                             }
                         }
                     } catch (e: Exception) {

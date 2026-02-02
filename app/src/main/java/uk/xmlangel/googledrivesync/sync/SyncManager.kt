@@ -50,6 +50,9 @@ class SyncManager internal constructor(
     private var currentFileIndex = AtomicInteger(0)
     private var totalSyncFiles = 0
     private var currentStatusMessage: String? = null
+    
+    private val folderObservers = mutableMapOf<String, RecursiveFileObserver>()
+    private val debounceJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
 
     companion object {
         @Volatile
@@ -65,10 +68,52 @@ class SyncManager internal constructor(
     }
     
     /**
-     * Initialize Drive service
+     * Initialize Drive service and start folder monitoring
      */
     fun initialize(): Boolean {
-        return driveHelper.initializeDriveService()
+        val result = driveHelper.initializeDriveService()
+        if (result) {
+            startMonitoringFolders()
+        }
+        return result
+    }
+    
+    /**
+     * Start monitoring all enabled folders for local changes
+     */
+    fun startMonitoringFolders() {
+        managerScope.launch {
+            val folders = syncFolderDao.getEnabledSyncFoldersOnce()
+            folders.forEach { folder ->
+                setupFolderObserver(folder)
+            }
+        }
+    }
+
+    private fun setupFolderObserver(folder: SyncFolderEntity) {
+        synchronized(folderObservers) {
+            if (folderObservers.containsKey(folder.id)) {
+                folderObservers[folder.id]?.stopWatching()
+            }
+            
+            val observer = RecursiveFileObserver(folder.localPath) { event, path ->
+                handleLocalChangeEvent(folder.id, event, path)
+            }
+            folderObservers[folder.id] = observer
+            logger.log("로컬 실시간 감시 시작: ${folder.localPath}", folder.accountEmail)
+        }
+    }
+
+    private fun handleLocalChangeEvent(folderId: String, event: Int, path: String?) {
+        // Debounce sync trigger: Wait 5 seconds after the last local change before syncing
+        synchronized(debounceJobs) {
+            debounceJobs[folderId]?.cancel()
+            debounceJobs[folderId] = managerScope.launch {
+                kotlinx.coroutines.delay(5000)
+                logger.log("로컬 변경 감지됨 - 자동 동기화 트리거 ($folderId)")
+                syncFolder(folderId)
+            }
+        }
     }
     
     /**
@@ -92,6 +137,7 @@ class SyncManager internal constructor(
             syncDirection = direction
         )
         syncFolderDao.insertSyncFolder(folder)
+        setupFolderObserver(folder)
         return folder
     }
     
@@ -174,6 +220,7 @@ class SyncManager internal constructor(
                     
                     logger.log("차분 동기화 완료 (업로드=${changesResult.uploaded}, 다운로드=${changesResult.downloaded}, 에러=${changesResult.errors})", folder.accountEmail)
                 } catch (e: Exception) {
+                    if (isFatalNetworkError(e)) throw e
                     logger.log("차분 동기화 중 예외 발생: ${e.message}", folder.accountEmail)
                 }
             }
@@ -190,6 +237,7 @@ class SyncManager internal constructor(
             val driveItems = try {
                 driveHelper.listAllFiles(folder.driveFolderId)
             } catch (e: Exception) {
+                if (isFatalNetworkError(e)) throw e
                 val errorMsg = when (e) {
                     is java.net.UnknownHostException -> "네트워크 연결이 없거나 Google 서비스에 접속할 수 없습니다 (DNS 오류)"
                     is java.net.SocketTimeoutException -> "서버 응답 시간 초과"
@@ -200,11 +248,11 @@ class SyncManager internal constructor(
                 emptyList()
             }
             
-            logger.log("스캔 완료: 로컬=${localItems.size}개, 드라이브=${driveItems.size}개", folder.accountEmail)
-            
-            // Calculate total files for progress tracking
-            totalSyncFiles = countAllFiles(folder.localPath, folder.driveFolderId)
+            // Calculate total files for progress tracking (Local only for efficiency)
+            totalSyncFiles = countLocalFilesRecursive(folder.localPath)
             currentFileIndex.set(0)
+            
+            logger.log("스캔 완료: 로컬=${localItems.size}개, 드라이브=${driveItems.size}개 (전체 예상 항목: $totalSyncFiles)", folder.accountEmail)
             
             // Use a unified recursive sync method
             if (localItems.isNotEmpty() || driveItems.isNotEmpty()) {
@@ -730,6 +778,11 @@ class SyncManager internal constructor(
         val isLocalUpdated = (existingItem == null || (localDrift > 2000 && localModified > (existingItem.localModifiedAt)) || localSize != (existingItem.localSize))
         val isDriveUpdated = (existingItem == null || (driveDrift > 2000 && driveModified > (existingItem.driveModifiedAt)) || driveSize != (existingItem.driveSize))
         
+        // Optimisation: If both sides match what we have in DB, skip everything including MD5
+        if (existingItem != null && !isLocalUpdated && !isDriveUpdated) {
+            return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+        }
+
         // v1.0.9: New Item Linking - If sizes match exactly, link without sync
         if (existingItem == null && localSize == driveSize) {
             val localMd5 = uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(localFile)
@@ -742,8 +795,9 @@ class SyncManager internal constructor(
             }
         }
 
-        // v1.0.9 + Phase 2: Content-based skipping (MD5 Match)
-        if (existingItem != null && localSize == existingItem.localSize && driveSize == existingItem.driveSize) {
+        // v1.0.9 + Phase 2: Content-based skipping (MD5 Match) for existing items
+        // Only do this if at least one side is "updated" metadata-wise
+        if (existingItem != null && localSize == driveSize) {
             val localMd5 = uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(localFile)
             if (localMd5 != null && localMd5 == driveFile.md5Checksum) {
                 if (isLocalUpdated || isDriveUpdated) {
@@ -884,46 +938,21 @@ class SyncManager internal constructor(
     /**
      * Count all files and folders recursively to get total sync count
      */
-    private suspend fun countAllFiles(localPath: String, driveFolderId: String): Int {
-        val localFiles = scanLocalFolder(localPath)
-        val driveFiles = driveHelper.listAllFiles(driveFolderId)
-        
-        val localMap = localFiles.associateBy { it.name }
-        val driveMap = driveFiles.associateBy { it.name }
-        val allNames = (localMap.keys + driveMap.keys).toSet()
+    /**
+     * Count local files recursively using efficient walking for progress estimation
+     */
+    private fun countLocalFilesRecursive(path: String): Int {
+        val root = File(path)
+        if (!root.exists()) return 0
         
         var count = 0
-        for (name in allNames) {
-            val localFile = localMap[name]
-            val driveFile = driveMap[name]
-            
-            count++ // Count current item
-            
-            // If it's a directory, count its contents too
-            if ((localFile != null && localFile.isDirectory) || (driveFile != null && driveFile.isFolder)) {
-                val subDriveId = driveFile?.id
-                if (subDriveId != null) {
-                    val subLocalPath = File(localPath, name).absolutePath
-                    count += countAllFiles(subLocalPath, subDriveId)
-                } else if (localFile != null) {
-                    // Local directory only, but we don't have Drive ID yet
-                    // To be accurate, we'd need to assume it'll be created
-                    // For now, let's just count local sub-items
-                    count += countLocalFilesRecursive(localFile)
-                }
+        try {
+            // Using Kotlin's walkTopDown() which is more efficient for deep hierarchies
+            root.walkTopDown().forEach { _ ->
+                count++
             }
-        }
-        return count
-    }
-
-    private fun countLocalFilesRecursive(file: File): Int {
-        var count = 0
-        val contents = file.listFiles() ?: return 0
-        for (item in contents) {
-            count++
-            if (item.isDirectory) {
-                count += countLocalFilesRecursive(item)
-            }
+        } catch (e: Exception) {
+            // Fallback: if walk fails, count what we can
         }
         return count
     }

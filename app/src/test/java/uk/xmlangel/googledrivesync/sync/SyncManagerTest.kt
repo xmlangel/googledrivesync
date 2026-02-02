@@ -54,6 +54,7 @@ class SyncManagerTest {
         context = ApplicationProvider.getApplicationContext()
         
         mockSyncFolderDao = mockk(relaxed = true)
+        coEvery { mockSyncFolderDao.getSyncFolderByDriveId(any()) } returns null
         mockSyncItemDao = mockk(relaxed = true)
         mockHistoryDao = mockk(relaxed = true)
         mockDriveHelper = mockk(relaxed = true)

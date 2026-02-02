@@ -596,9 +596,18 @@ class SyncManager internal constructor(
                         }
                     } else {
                         // Moved to another folder!
-                        logger.log("이동 감지 (Drive): ${localFile.name} -> 다른 폴더로 이동됨", folder.accountEmail)
-                        if (localFile.delete()) {
-                            syncItemDao.deleteSyncItem(existingItem)
+                        val targetParentId = driveFileMeta.parentIds.firstOrNull() ?: ""
+                        val targetFolder = syncFolderDao.getSyncFolderByDriveId(targetParentId)
+                        
+                        if (targetFolder != null) {
+                            logger.log("이동 감지 (Drive): ${localFile.name} -> 타깃 폴더(${targetFolder.driveFolderName})로 이동됨. 삭제 보류", folder.accountEmail)
+                            // Keep local file so it can be moved by target folder's sync instead of re-downloading
+                            skipped++
+                        } else {
+                            logger.log("이동 감지 (Drive): ${localFile.name} -> 비동기화 폴더로 이동됨. 로컬 삭제", folder.accountEmail)
+                            if (localFile.delete()) {
+                                syncItemDao.deleteSyncItem(existingItem)
+                            }
                         }
                     }
                 } catch (e: Exception) {

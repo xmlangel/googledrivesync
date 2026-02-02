@@ -170,6 +170,7 @@ class SyncMoveDetectionTest {
         
         // Run sync
         coEvery { mockSyncFolderDao.getSyncFolderById(folderAId) } returns folderA
+        coEvery { mockSyncFolderDao.getSyncFolderByDriveId("drive-b") } returns SyncFolderEntity("folder-b-id", "acc", "test@test.com", "/path/to/B", "drive-b", "Drive B")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
         coEvery { mockDriveHelper.listAllFiles("drive-a") } returns driveItems
         coEvery { mockHistoryDao.insertHistory(any()) } returns 1L

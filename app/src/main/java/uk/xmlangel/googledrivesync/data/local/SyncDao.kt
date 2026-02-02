@@ -40,6 +40,9 @@ interface SyncFolderDao {
     @Query("SELECT MAX(lastSyncedAt) FROM sync_folders WHERE accountId = :accountId")
     suspend fun getMaxLastSyncTimeByAccount(accountId: String): Long?
 
+    @Query("SELECT * FROM sync_folders WHERE driveFolderId = :driveFolderId LIMIT 1")
+    suspend fun getSyncFolderByDriveId(driveFolderId: String): SyncFolderEntity?
+
     @Query("DELETE FROM sync_folders WHERE accountId = :accountId")
     suspend fun deleteFoldersByAccount(accountId: String)
 }

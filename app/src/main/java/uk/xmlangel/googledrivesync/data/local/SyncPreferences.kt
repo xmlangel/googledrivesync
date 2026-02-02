@@ -24,6 +24,7 @@ class SyncPreferences(context: Context) {
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
         private const val KEY_DEFAULT_CONFLICT_RESOLUTION = "default_conflict_resolution"
         private const val KEY_DEFAULT_SYNC_DIRECTION = "default_sync_direction"
+        private const val KEY_AUTO_UPLOAD_ENABLED = "auto_upload_enabled"
         
         const val DEFAULT_SYNC_INTERVAL = 15 // minutes (Default changed from 60 to 15)
     }
@@ -93,6 +94,13 @@ class SyncPreferences(context: Context) {
         }
         set(value) = prefs.edit { putString(KEY_DEFAULT_SYNC_DIRECTION, value.name) }
     
+    /**
+     * Enable automatic upload of non-conflicting local changes
+     */
+    var autoUploadEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_UPLOAD_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(KEY_AUTO_UPLOAD_ENABLED, value) }
+        
     /**
      * Available sync interval options (in minutes)
      * All options must be >= 15 minutes.

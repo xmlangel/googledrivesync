@@ -33,6 +33,7 @@ fun SyncSettingsScreen(
     var notifications by remember { mutableStateOf(syncPreferences.notificationsEnabled) }
     var defaultConflictResolution by remember { mutableStateOf(syncPreferences.defaultConflictResolution) }
     var defaultSyncDirection by remember { mutableStateOf(syncPreferences.defaultSyncDirection) }
+    var autoUpload by remember { mutableStateOf(syncPreferences.autoUploadEnabled) }
     
     var showIntervalDialog by remember { mutableStateOf(false) }
     var showConflictResolutionDialog by remember { mutableStateOf(false) }
@@ -192,6 +193,17 @@ fun SyncSettingsScreen(
                         SyncDirection.UPLOAD_ONLY -> "업로드 전용 (로컬 → Drive)"
                     },
                     onClick = { showSyncDirectionDialog = true }
+                )
+                
+                SettingsSwitchItem(
+                    icon = Icons.Default.CloudUpload,
+                    title = "로컬 변경사항 자동 업로드",
+                    subtitle = "충돌이 없는 경우 확인 없이 즉시 업로드",
+                    checked = autoUpload,
+                    onCheckedChange = {
+                        autoUpload = it
+                        syncPreferences.autoUploadEnabled = it
+                    }
                 )
                 
                 Text(

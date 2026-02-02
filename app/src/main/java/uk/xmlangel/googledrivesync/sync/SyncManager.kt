@@ -551,6 +551,9 @@ class SyncManager internal constructor(
                     } else {
                         // Moved to another folder!
                         logger.log("이동 감지 (Drive): ${localFile.name} -> 다른 폴더로 이동됨", folder.accountEmail)
+                        if (localFile.delete()) {
+                            syncItemDao.deleteSyncItem(existingItem)
+                        }
                     }
                 } catch (e: Exception) {
                     if (isFatalNetworkError(e)) throw e
@@ -586,19 +589,37 @@ class SyncManager internal constructor(
             } else {
                 // New Local File
                 if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                    val statusMsg = "업로드 대기: ${localFile.name}"
-                    logger.log(statusMsg, folder.accountEmail)
-                    currentStatusMessage = statusMsg
-                    
-                    val pendingUpload = PendingUpload(
-                        folderId = folder.id,
-                        localFile = localFile,
-                        driveFolderId = driveFolderId,
-                        isNewFile = true,
-                        accountEmail = folder.accountEmail
-                    )
-                    pendingUploads.add(pendingUpload)
-                    skipped++ 
+                    if (syncPreferences.autoUploadEnabled) {
+                        val statusMsg = "새 파일 업로드: ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
+                        try {
+                            val created = driveHelper.uploadFile(localFile.absolutePath, localFile.name, driveFolderId)
+                            if (created != null) {
+                                trackSyncItem(folder, localFile, created.id, created.modifiedTime, created.size, SyncStatus.SYNCED, created.md5Checksum)
+                                uploaded++
+                            } else {
+                                errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name}", folder.accountEmail)
+                            }
+                        } catch (e: Exception) {
+                            if (isFatalNetworkError(e)) throw e
+                            errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} (${e.message})", folder.accountEmail)
+                        }
+                    } else {
+                        val statusMsg = "업로드 대기: ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
+                        
+                        val pendingUpload = PendingUpload(
+                            folderId = folder.id,
+                            localFile = localFile,
+                            driveFolderId = driveFolderId,
+                            isNewFile = true,
+                            accountEmail = folder.accountEmail
+                        )
+                        pendingUploads.add(pendingUpload)
+                        skipped++
+                    }
                 } else skipped++
             }
         }
@@ -692,19 +713,46 @@ class SyncManager internal constructor(
                 }
                 isLocalUpdated -> {
                     if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                        val statusMsg = "업로드 대기 (수정됨): ${localFile.name}"
-                        logger.log(statusMsg, folder.accountEmail)
-                        currentStatusMessage = statusMsg
-                        
-                        val pendingUpload = PendingUpload(
-                            folderId = folder.id,
-                            localFile = localFile,
-                            driveFolderId = driveFile.id, 
-                            isNewFile = false,
-                            driveFileId = existingItem?.driveFileId ?: driveFile.id,
-                            accountEmail = folder.accountEmail
-                        )
-                        return RecursiveSyncResult(0, 0, 1, 0, emptyList(), listOf(pendingUpload))
+                        if (syncPreferences.autoUploadEnabled) {
+                            val statusMsg = "파일 업데이트(업로드): ${localFile.name}"
+                            logger.log(statusMsg, folder.accountEmail)
+                            currentStatusMessage = statusMsg
+                            try {
+                                val driveFileId = existingItem?.driveFileId ?: driveFile.id
+                                val updated = driveHelper.updateFile(driveFileId, localFile.absolutePath, getMimeType(localFile.name))
+                                if (updated != null) {
+                                    updateSyncItem(
+                                        existingItem = existingItem ?: createSyncItem(folder, localFile, driveFileId),
+                                        localFile = localFile,
+                                        driveFileId = updated.id,
+                                        driveModifiedTime = updated.modifiedTime,
+                                        driveSize = updated.size,
+                                        status = SyncStatus.SYNCED,
+                                        md5Checksum = updated.md5Checksum
+                                    )
+                                    uploaded++
+                                } else {
+                                    errors++; logger.log("[ERROR] 파일 업데이트 실패: ${localFile.name}", folder.accountEmail)
+                                }
+                            } catch (e: Exception) {
+                                if (isFatalNetworkError(e)) throw e
+                                errors++; logger.log("[ERROR] 파일 업데이트 실패: ${localFile.name} (${e.message})", folder.accountEmail)
+                            }
+                        } else {
+                            val statusMsg = "업로드 대기 (수정됨): ${localFile.name}"
+                            logger.log(statusMsg, folder.accountEmail)
+                            currentStatusMessage = statusMsg
+                            
+                            val pendingUpload = PendingUpload(
+                                folderId = folder.id,
+                                localFile = localFile,
+                                driveFolderId = driveFile.id, 
+                                isNewFile = false,
+                                driveFileId = existingItem?.driveFileId ?: driveFile.id,
+                                accountEmail = folder.accountEmail
+                            )
+                            return RecursiveSyncResult(0, 0, 1, 0, emptyList(), listOf(pendingUpload))
+                        }
                     } else skipped++
                 }
                 isDriveUpdated -> {

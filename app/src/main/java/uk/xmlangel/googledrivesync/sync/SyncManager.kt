@@ -462,7 +462,7 @@ class SyncManager internal constructor(
                 val dir = File(subLocalPath)
                 
                 if (!dir.exists()) {
-                    if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                    if (syncPreferences.defaultSyncDirection != SyncDirection.UPLOAD_ONLY) {
                         val statusMsg = "폴더 생성: ${driveFile.name}"
                         logger.log(statusMsg, folder.accountEmail)
                         currentStatusMessage = statusMsg
@@ -499,7 +499,7 @@ class SyncManager internal constructor(
                     conflicts.addAll(syncResult.conflicts)
                     // Collecting pending uploads from processFilePair
                     _pendingUploads.value = _pendingUploads.value + syncResult.pendingUploads
-                } else if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                } else if (syncPreferences.defaultSyncDirection != SyncDirection.UPLOAD_ONLY) {
                     val sanitizedName = uk.xmlangel.googledrivesync.util.FileUtils.sanitizeFileName(driveFile.name)
                     val statusMsg = "새 파일 다운로드: $sanitizedName"
                     logger.log(statusMsg, folder.accountEmail)
@@ -562,7 +562,7 @@ class SyncManager internal constructor(
                 }
             } else if (localFile.isDirectory) {
                 // New Local Folder
-                if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
                     val statusMsg = "새 폴더 업로드: ${localFile.name}"
                     logger.log(statusMsg, folder.accountEmail)
                     currentStatusMessage = statusMsg
@@ -581,7 +581,7 @@ class SyncManager internal constructor(
                     } else skipped++
                 } else {
                     // New Local File
-                    if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                    if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
                         val statusMsg = "업로드 대기: ${localFile.name}"
                         logger.log(statusMsg, folder.accountEmail)
                         currentStatusMessage = statusMsg
@@ -680,7 +680,7 @@ class SyncManager internal constructor(
                 } else conflicts.add(conflict)
             }
             isLocalUpdated -> {
-                if (folder.syncDirection != SyncDirection.DOWNLOAD_ONLY) {
+                if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
                     val statusMsg = "업로드 대기 (수정됨): ${localFile.name}"
                     logger.log(statusMsg, folder.accountEmail)
                     currentStatusMessage = statusMsg
@@ -697,7 +697,7 @@ class SyncManager internal constructor(
                 } else skipped++
             }
             isDriveUpdated -> {
-                if (folder.syncDirection != SyncDirection.UPLOAD_ONLY) {
+                if (syncPreferences.defaultSyncDirection != SyncDirection.UPLOAD_ONLY) {
                     val statusMsg = "파일 다운로드: ${localFile.name}"
                     logger.log(statusMsg, folder.accountEmail)
                     currentStatusMessage = statusMsg

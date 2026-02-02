@@ -176,7 +176,7 @@ fun NavGraph(
                                 localPath = localPath,
                                 driveFolderId = driveFolderId,
                                 driveFolderName = driveFolderName,
-                                direction = SyncDirection.DOWNLOAD_ONLY
+                                // direction parameter removed to use default from implementation
                             )
                         }
                     }

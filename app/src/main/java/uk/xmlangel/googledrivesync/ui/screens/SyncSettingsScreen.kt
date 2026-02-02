@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import android.os.Build
 import androidx.compose.ui.platform.LocalContext
 import uk.xmlangel.googledrivesync.data.local.SyncPreferences
+import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,9 +31,11 @@ fun SyncSettingsScreen(
     var autoSync by remember { mutableStateOf(syncPreferences.autoSyncEnabled) }
     var notifications by remember { mutableStateOf(syncPreferences.notificationsEnabled) }
     var defaultConflictResolution by remember { mutableStateOf(syncPreferences.defaultConflictResolution) }
+    var defaultSyncDirection by remember { mutableStateOf(syncPreferences.defaultSyncDirection) }
     
     var showIntervalDialog by remember { mutableStateOf(false) }
     var showConflictResolutionDialog by remember { mutableStateOf(false) }
+    var showSyncDirectionDialog by remember { mutableStateOf(false) }
     
     Scaffold(
         topBar = {
@@ -178,6 +181,24 @@ fun SyncSettingsScreen(
                     },
                     onClick = { showConflictResolutionDialog = true }
                 )
+                
+                SettingsClickItem(
+                    icon = Icons.Default.SyncAlt,
+                    title = "기본 동기화 모드",
+                    subtitle = when (defaultSyncDirection) {
+                        SyncDirection.BIDIRECTIONAL -> "양방향 (권장)"
+                        SyncDirection.DOWNLOAD_ONLY -> "다운로드 전용 (Drive → 로컬)"
+                        SyncDirection.UPLOAD_ONLY -> "업로드 전용 (로컬 → Drive)"
+                    },
+                    onClick = { showSyncDirectionDialog = true }
+                )
+                
+                Text(
+                    text = "* 설정된 모드는 모든 폴더에 실시간으로 적용됩니다.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
             }
             
             // App Info Section
@@ -281,6 +302,48 @@ fun SyncSettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showConflictResolutionDialog = false }) {
+                    Text("취소")
+                }
+            }
+        )
+    }
+
+    // Sync Direction Selection Dialog
+    if (showSyncDirectionDialog) {
+        AlertDialog(
+            onDismissRequest = { showSyncDirectionDialog = false },
+            title = { Text("기본 동기화 모드 선택") },
+            text = {
+                Column {
+                    val options = listOf(
+                        SyncDirection.BIDIRECTIONAL to "양방향 (권장)",
+                        SyncDirection.DOWNLOAD_ONLY to "다운로드 전용 (Drive → 로컬)",
+                        SyncDirection.UPLOAD_ONLY to "업로드 전용 (로컬 → Drive)"
+                    )
+                    
+                    options.forEach { (option, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = defaultSyncDirection == option,
+                                onClick = {
+                                    defaultSyncDirection = option
+                                    syncPreferences.defaultSyncDirection = option
+                                    showSyncDirectionDialog = false
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSyncDirectionDialog = false }) {
                     Text("취소")
                 }
             }

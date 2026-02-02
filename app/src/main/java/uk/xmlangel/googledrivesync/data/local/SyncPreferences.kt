@@ -3,6 +3,7 @@ package uk.xmlangel.googledrivesync.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
 
 /**
@@ -22,6 +23,7 @@ class SyncPreferences(context: Context) {
         private const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
         private const val KEY_DEFAULT_CONFLICT_RESOLUTION = "default_conflict_resolution"
+        private const val KEY_DEFAULT_SYNC_DIRECTION = "default_sync_direction"
         
         const val DEFAULT_SYNC_INTERVAL = 15 // minutes (Default changed from 60 to 15)
     }
@@ -76,6 +78,20 @@ class SyncPreferences(context: Context) {
             }
         }
         set(value) = prefs.edit { putString(KEY_DEFAULT_CONFLICT_RESOLUTION, value?.name) }
+    
+    /**
+     * Get default sync direction (Bidirectional, Download only, Upload only)
+     */
+    var defaultSyncDirection: SyncDirection
+        get() {
+            val name = prefs.getString(KEY_DEFAULT_SYNC_DIRECTION, SyncDirection.BIDIRECTIONAL.name)
+            return try {
+                SyncDirection.valueOf(name ?: SyncDirection.BIDIRECTIONAL.name)
+            } catch (e: Exception) {
+                SyncDirection.BIDIRECTIONAL
+            }
+        }
+        set(value) = prefs.edit { putString(KEY_DEFAULT_SYNC_DIRECTION, value.name) }
     
     /**
      * Available sync interval options (in minutes)

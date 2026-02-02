@@ -16,6 +16,7 @@ import org.robolectric.annotation.Config
 import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import uk.xmlangel.googledrivesync.data.local.*
 import uk.xmlangel.googledrivesync.data.model.SyncStatus
+import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.util.SyncLogger
 import java.io.File
 import java.util.*
@@ -30,9 +31,6 @@ class SyncManagerTest {
     lateinit var mockDriveHelper: DriveServiceHelper
 
     @MockK
-    lateinit var mockDatabase: SyncDatabase
-
-    @MockK
     lateinit var mockSyncFolderDao: SyncFolderDao
 
     @MockK
@@ -42,10 +40,11 @@ class SyncManagerTest {
     lateinit var mockHistoryDao: SyncHistoryDao
 
     @MockK
-    lateinit var mockSyncPreferences: SyncPreferences
+    lateinit var mockDatabase: SyncDatabase
 
-    @MockK(relaxUnitFun = true)
-    lateinit var mockLogger: SyncLogger
+    private lateinit var mockSyncPreferences: SyncPreferences
+    
+    private lateinit var mockLogger: SyncLogger
 
     private lateinit var syncManager: SyncManager
 
@@ -54,23 +53,36 @@ class SyncManagerTest {
         MockKAnnotations.init(this)
         context = ApplicationProvider.getApplicationContext()
         
-        mockkObject(uk.xmlangel.googledrivesync.util.FileUtils)
-        every { uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(any()) } returns "test-md5"
+        mockSyncFolderDao = mockk(relaxed = true)
+        mockSyncItemDao = mockk(relaxed = true)
+        mockHistoryDao = mockk(relaxed = true)
+        mockDriveHelper = mockk(relaxed = true)
+        mockDatabase = mockk(relaxed = true)
+        mockSyncPreferences = mockk(relaxed = true)
         
-        // Setup SyncManager with mocked dependencies
+        // Default behaviors
+        every { mockSyncPreferences.defaultSyncDirection } returns SyncDirection.BIDIRECTIONAL
+        every { mockSyncPreferences.defaultConflictResolution } returns ConflictResolution.USE_LOCAL
+        
+        mockLogger = mockk(relaxed = true)
+        // Ensure logger logs to stdout in tests for visibility
+        every { mockLogger.log(any(), any()) } answers {
+            println("Logger: ${it.invocation.args[0]}")
+        }
+        
         syncManager = SyncManager(
             context = context,
-            driveHelper = mockDriveHelper,
-            database = mockDatabase,
             syncFolderDao = mockSyncFolderDao,
             syncItemDao = mockSyncItemDao,
             historyDao = mockHistoryDao,
+            driveHelper = mockDriveHelper,
+            database = mockDatabase,
             syncPreferences = mockSyncPreferences,
             logger = mockLogger
         )
         
-        // Default mocks
-        every { mockSyncPreferences.defaultConflictResolution } returns null
+        mockkObject(uk.xmlangel.googledrivesync.util.FileUtils)
+        every { uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(any()) } returns "test-md5"
     }
 
     @Test
@@ -570,7 +582,8 @@ class SyncManagerTest {
             coEvery { mockDriveHelper.listAllFiles(any()) } returns emptyList()
             coEvery { mockSyncItemDao.getSyncItemByLocalPath(any()) } returns null
             
-            syncManager.syncFolder(folderId)
+            val result = syncManager.syncFolder(folderId)
+            assertFalse("Sync should not result in error, but got: $result", result is SyncResult.Error)
             
             // Verify it was added to pendingUploads
             val pendingUploads = syncManager.pendingUploads.value
@@ -586,6 +599,32 @@ class SyncManagerTest {
             // Cleanup
             localFile.delete()
         }
+    }
+
+    @Test
+    fun `syncFolder stops immediately on fatal network error`() = runBlocking {
+        println("Testing syncFolder stops immediately on fatal network error...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        
+        // Mock a fatal network error when listing files
+        coEvery { mockDriveHelper.listAllFiles(any()) } throws java.net.UnknownHostException("Unable to resolve host")
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Error)
+        val error = result as SyncResult.Error
+        assertTrue("Error message should mention network", error.message.contains("네트워크 연결"))
+        
+        // Verify that history was NOT completed successfully (it would have been logged in the finally block or catch block)
+        // In the current implementation, SyncManager catches the exception and returns SyncResult.Error.
+        // Let's verify logger was called with the error.
+        verify { mockLogger.log(match { it.contains("치명적 오류 발생") && it.contains("DNS 오류") }, any()) }
+        println("  Verified syncFolder caught fatal network error and returned appropriate SyncResult.Error.")
     }
 
     @org.junit.After

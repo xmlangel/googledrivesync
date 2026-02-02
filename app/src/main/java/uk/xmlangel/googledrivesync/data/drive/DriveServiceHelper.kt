@@ -127,40 +127,35 @@ class DriveServiceHelper(private val context: Context) {
      */
     suspend fun downloadFile(fileId: String, destinationPath: String): Boolean = 
         withContext(Dispatchers.IO) {
-            try {
-                // Get metadata first to check size and mimeType
-                val fileMetadata = getDrive().files().get(fileId)
-                    .setFields("id, name, mimeType, size")
-                    .execute()
-                
-                val mimeType = fileMetadata.mimeType
-                val size = fileMetadata.getSize() ?: 0L
-                
-                // 1. Handle 0-byte files (Fix for 416 error)
-                if (size == 0L && !isGoogleDoc(mimeType)) {
-                    File(destinationPath).createNewFile()
-                    return@withContext true
-                }
-                
-                val outputStream: OutputStream = FileOutputStream(destinationPath)
-                
-                // 2. Handle Google Docs (Fix for 403 error)
-                if (isGoogleDoc(mimeType)) {
-                    val exportMimeType = getExportMimeType(mimeType)
-                    getDrive().files().export(fileId, exportMimeType)
-                        .executeMediaAndDownloadTo(outputStream)
-                } else {
-                    // Normal binary file
-                    getDrive().files().get(fileId)
-                        .executeMediaAndDownloadTo(outputStream)
-                }
-                
-                outputStream.close()
-                true
-            } catch (e: Exception) {
-                e.printStackTrace()
-                false
+            // Get metadata first to check size and mimeType
+            val fileMetadata = getDrive().files().get(fileId)
+                .setFields("id, name, mimeType, size")
+                .execute()
+            
+            val mimeType = fileMetadata.mimeType
+            val size = fileMetadata.getSize() ?: 0L
+            
+            // 1. Handle 0-byte files (Fix for 416 error)
+            if (size == 0L && !isGoogleDoc(mimeType)) {
+                File(destinationPath).createNewFile()
+                return@withContext true
             }
+            
+            val outputStream: OutputStream = FileOutputStream(destinationPath)
+            
+            // 2. Handle Google Docs (Fix for 403 error)
+            if (isGoogleDoc(mimeType)) {
+                val exportMimeType = getExportMimeType(mimeType)
+                getDrive().files().export(fileId, exportMimeType)
+                    .executeMediaAndDownloadTo(outputStream)
+            } else {
+                // Normal binary file
+                getDrive().files().get(fileId)
+                    .executeMediaAndDownloadTo(outputStream)
+            }
+            
+            outputStream.close()
+            true
         }
 
     private fun isGoogleDoc(mimeType: String?): Boolean {
@@ -188,26 +183,21 @@ class DriveServiceHelper(private val context: Context) {
         parentFolderId: String?,
         mimeType: String = "application/octet-stream"
     ): DriveItem? = withContext(Dispatchers.IO) {
-        try {
-            val fileMetadata = DriveFile().apply {
-                name = fileName
-                if (parentFolderId != null) {
-                    parents = listOf(parentFolderId)
-                }
+        val fileMetadata = DriveFile().apply {
+            name = fileName
+            if (parentFolderId != null) {
+                parents = listOf(parentFolderId)
             }
-            
-            val localFile = File(localPath)
-            val mediaContent = FileContent(mimeType, localFile)
-            
-            val file = getDrive().files().create(fileMetadata, mediaContent)
-                .setFields("id, name, mimeType, modifiedTime, size, parents")
-                .execute()
-            
-            file.toDriveItem()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
         }
+        
+        val localFile = File(localPath)
+        val mediaContent = FileContent(mimeType, localFile)
+        
+        val file = getDrive().files().create(fileMetadata, mediaContent)
+            .setFields("id, name, mimeType, modifiedTime, size, parents")
+            .execute()
+        
+        file.toDriveItem()
     }
     
     /**
@@ -218,19 +208,14 @@ class DriveServiceHelper(private val context: Context) {
         localPath: String,
         mimeType: String = "application/octet-stream"
     ): DriveItem? = withContext(Dispatchers.IO) {
-        try {
-            val localFile = File(localPath)
-            val mediaContent = FileContent(mimeType, localFile)
-            
-            val file = getDrive().files().update(fileId, null, mediaContent)
-                .setFields("id, name, mimeType, modifiedTime, size, parents")
-                .execute()
-            
-            file.toDriveItem()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
+        val localFile = File(localPath)
+        val mediaContent = FileContent(mimeType, localFile)
+        
+        val file = getDrive().files().update(fileId, null, mediaContent)
+            .setFields("id, name, mimeType, modifiedTime, size, parents")
+            .execute()
+        
+        file.toDriveItem()
     }
     
     /**
@@ -240,24 +225,19 @@ class DriveServiceHelper(private val context: Context) {
         folderName: String,
         parentFolderId: String? = null
     ): DriveItem? = withContext(Dispatchers.IO) {
-        try {
-            val fileMetadata = DriveFile().apply {
-                name = folderName
-                mimeType = MIME_TYPE_FOLDER
-                if (parentFolderId != null) {
-                    parents = listOf(parentFolderId)
-                }
+        val fileMetadata = DriveFile().apply {
+            name = folderName
+            mimeType = MIME_TYPE_FOLDER
+            if (parentFolderId != null) {
+                parents = listOf(parentFolderId)
             }
-            
-            val file = getDrive().files().create(fileMetadata)
-                .setFields("id, name, mimeType, modifiedTime, parents")
-                .execute()
-            
-            file.toDriveItem()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
         }
+        
+        val file = getDrive().files().create(fileMetadata)
+            .setFields("id, name, mimeType, modifiedTime, parents")
+            .execute()
+        
+        file.toDriveItem()
     }
     
     /**

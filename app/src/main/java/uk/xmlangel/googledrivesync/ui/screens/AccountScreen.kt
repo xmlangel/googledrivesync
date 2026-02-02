@@ -31,6 +31,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import uk.xmlangel.googledrivesync.data.model.GoogleAccount
 import uk.xmlangel.googledrivesync.data.repository.AccountRepository
+import uk.xmlangel.googledrivesync.util.AppVersionUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,7 +110,7 @@ fun AccountScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Google Drive Sync v1.0.9") },
+                title = { Text("Google Drive Sync ${AppVersionUtil.getVersionString(context)}") },
                 actions = {
                     IconButton(onClick = { /* Already on Account screen */ }) {
                         Icon(Icons.Default.AccountCircle, "계정")

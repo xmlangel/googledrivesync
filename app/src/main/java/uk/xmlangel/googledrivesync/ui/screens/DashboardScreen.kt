@@ -25,6 +25,7 @@ import uk.xmlangel.googledrivesync.sync.SyncConflict
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
 import uk.xmlangel.googledrivesync.sync.SyncManager
 import uk.xmlangel.googledrivesync.sync.SyncResult
+import uk.xmlangel.googledrivesync.util.AppVersionUtil
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -42,20 +43,7 @@ fun DashboardScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val versionInfo = remember {
-        try {
-            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            val name = packageInfo.versionName ?: "Unknown"
-            val code = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                packageInfo.longVersionCode
-            } else {
-                packageInfo.versionCode.toLong()
-            }
-            "v$name ($code)"
-        } catch (e: Exception) {
-            "Unknown"
-        }
-    }
+    val versionInfo = remember { AppVersionUtil.getVersionString(context) }
     
     val syncFolders by database.syncFolderDao()
         .getSyncFoldersByAccount(accountId)

@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import uk.xmlangel.googledrivesync.data.local.SyncPreferences
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
+import uk.xmlangel.googledrivesync.util.AppVersionUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -202,21 +203,7 @@ fun SyncSettingsScreen(
             }
             
             // App Info Section
-            val versionInfo = remember {
-                try {
-                    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                    val name = packageInfo.versionName ?: "Unknown"
-                    val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        packageInfo.longVersionCode
-                    } else {
-                        @Suppress("DEPRECATION")
-                        packageInfo.versionCode.toLong()
-                    }
-                    "$name ($code)"
-                } catch (e: Exception) {
-                    "Unknown"
-                }
-            }
+            val versionInfo = remember { AppVersionUtil.getVersionString(context) }
             
             SettingsSection(title = "앱 정보") {
                 SettingsInfoItem(

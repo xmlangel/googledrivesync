@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import uk.xmlangel.googledrivesync.data.local.*
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
@@ -355,6 +356,8 @@ class SyncManager internal constructor(
             _lastSyncResult.value = syncResult
             return syncResult
             
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
             val errorMessage = when (e) {
@@ -959,6 +962,8 @@ class SyncManager internal constructor(
                 }
                 else -> skipped++
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             errors++
             logger.log("[ERROR] 파일 쌍 처리 중 치명적 오류: ${localFile.name} (${e.message})", folder.accountEmail)
@@ -1156,6 +1161,8 @@ class SyncManager internal constructor(
                         logger.log("로컬 삭제 감지됨: ${existingItem.fileName} (DB에서 제거)", folder.accountEmail)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.log("[ERROR] 타겟 항목 처리 예외 (${path}): ${e.message}", folder.accountEmail)
                 errors++
@@ -1286,6 +1293,8 @@ class SyncManager internal constructor(
             }
             
             return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, pendingUploads)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.log("[ERROR] 차분 동기화 실패: ${e.message}", folder.accountEmail)
             return RecursiveSyncResult(uploaded, downloaded, skipped, errors + 1, conflicts, pendingUploads)

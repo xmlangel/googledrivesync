@@ -11,6 +11,7 @@ import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as DriveFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -118,6 +119,8 @@ class DriveServiceHelper(private val context: Context) {
     suspend fun getStartPageToken(): String? = withContext(Dispatchers.IO) {
         try {
             getDrive().changes().getStartPageToken().execute().startPageToken
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -155,6 +158,8 @@ class DriveServiceHelper(private val context: Context) {
     suspend fun getFile(fileId: String): DriveItem? = withContext(Dispatchers.IO) {
         try {
             getFileMetadata(fileId)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -174,6 +179,8 @@ class DriveServiceHelper(private val context: Context) {
                 .execute()
             
             result.files?.firstOrNull()?.toDriveItem()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -304,6 +311,8 @@ class DriveServiceHelper(private val context: Context) {
         try {
             getDrive().files().delete(fileId).execute()
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
             false

@@ -11,6 +11,7 @@ import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as DriveFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -113,6 +114,35 @@ class DriveServiceHelper(private val context: Context) {
     }
 
     /**
+     * Get the starting page token for Changes API
+     */
+    suspend fun getStartPageToken(): String? = withContext(Dispatchers.IO) {
+        try {
+            getDrive().changes().getStartPageToken().execute().startPageToken
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Get changes since a specific page token
+     */
+    suspend fun getChanges(pageToken: String): DriveChangeResult = withContext(Dispatchers.IO) {
+        val result = getDrive().changes().list(pageToken)
+            .setFields("nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, modifiedTime, size, parents, md5Checksum))")
+            .execute()
+        
+        DriveChangeResult(
+            changes = result.changes?.map { it.toDriveChange() } ?: emptyList(),
+            nextPageToken = result.nextPageToken,
+            newStartPageToken = result.newStartPageToken
+        )
+    }
+
+    /**
      * Get file metadata
      */
     suspend fun getFileMetadata(fileId: String): DriveItem = withContext(Dispatchers.IO) {
@@ -120,6 +150,40 @@ class DriveServiceHelper(private val context: Context) {
             .setFields("id, name, mimeType, modifiedTime, size, parents, md5Checksum")
             .execute()
         file.toDriveItem()
+    }
+
+    /**
+     * Get a single file by ID
+     */
+    suspend fun getFile(fileId: String): DriveItem? = withContext(Dispatchers.IO) {
+        try {
+            getFileMetadata(fileId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Find a file by name in a specific parent folder
+     */
+    suspend fun findFile(name: String, parentId: String): DriveItem? = withContext(Dispatchers.IO) {
+        try {
+            val query = "name = '$name' and '$parentId' in parents and trashed = false"
+            val result = getDrive().files().list()
+                .setQ(query)
+                .setSpaces("drive")
+                .setFields("files(id, name, mimeType, modifiedTime, size, parents, md5Checksum)")
+                .setPageSize(1)
+                .execute()
+            
+            result.files?.firstOrNull()?.toDriveItem()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
     }
     
     /**
@@ -247,6 +311,8 @@ class DriveServiceHelper(private val context: Context) {
         try {
             getDrive().files().delete(fileId).execute()
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
             false
@@ -311,3 +377,32 @@ data class DriveListResult(
     val files: List<DriveItem>,
     val nextPageToken: String?
 )
+
+/**
+ * Result of listing changes
+ */
+data class DriveChangeResult(
+    val changes: List<DriveChange>,
+    val nextPageToken: String?,
+    val newStartPageToken: String?
+)
+
+/**
+ * Individual change item
+ */
+data class DriveChange(
+    val fileId: String,
+    val removed: Boolean,
+    val file: DriveItem? = null
+)
+
+/**
+ * Extension to convert Drive API Change to DriveChange
+ */
+private fun com.google.api.services.drive.model.Change.toDriveChange(): DriveChange {
+    return DriveChange(
+        fileId = fileId,
+        removed = removed ?: false,
+        file = file?.toDriveItem()
+    )
+}

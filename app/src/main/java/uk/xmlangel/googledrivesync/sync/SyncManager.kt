@@ -7,7 +7,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import uk.xmlangel.googledrivesync.data.local.*
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
@@ -26,6 +28,7 @@ class SyncManager internal constructor(
     private val syncFolderDao: SyncFolderDao = database.syncFolderDao(),
     private val syncItemDao: SyncItemDao = database.syncItemDao(),
     private val historyDao: SyncHistoryDao = database.syncHistoryDao(),
+    private val dirtyLocalDao: DirtyLocalDao = database.dirtyLocalDao(),
     private val syncPreferences: SyncPreferences = SyncPreferences(context),
     private val logger: uk.xmlangel.googledrivesync.util.SyncLogger = uk.xmlangel.googledrivesync.util.SyncLogger(context)
 ) {
@@ -49,6 +52,9 @@ class SyncManager internal constructor(
     private var currentFileIndex = AtomicInteger(0)
     private var totalSyncFiles = 0
     private var currentStatusMessage: String? = null
+    
+    private val folderObservers = mutableMapOf<String, RecursiveFileObserver>()
+    private val debounceJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
 
     companion object {
         @Volatile
@@ -64,10 +70,65 @@ class SyncManager internal constructor(
     }
     
     /**
-     * Initialize Drive service
+     * Initialize Drive service and start folder monitoring
      */
     fun initialize(): Boolean {
-        return driveHelper.initializeDriveService()
+        val result = driveHelper.initializeDriveService()
+        if (result) {
+            startMonitoringFolders()
+        }
+        return result
+    }
+    
+    /**
+     * Start monitoring all enabled folders for local changes
+     */
+    fun startMonitoringFolders() {
+        managerScope.launch {
+            val folders = syncFolderDao.getEnabledSyncFoldersOnce()
+            folders.forEach { folder ->
+                setupFolderObserver(folder)
+            }
+        }
+    }
+
+    private fun setupFolderObserver(folder: SyncFolderEntity) {
+        synchronized(folderObservers) {
+            if (folderObservers.containsKey(folder.id)) {
+                folderObservers[folder.id]?.stopWatching()
+            }
+            
+            val observer = RecursiveFileObserver(folder.localPath) { event, path ->
+                handleLocalChangeEvent(folder.id, event, path)
+            }
+            folderObservers[folder.id] = observer
+            logger.log("로컬 실시간 감시 시작: ${folder.localPath}", folder.accountEmail)
+        }
+    }
+
+    private fun handleLocalChangeEvent(folderId: String, event: Int, path: String?) {
+        if (path == null) return
+        
+        // Record dirty item in DB
+        managerScope.launch {
+            dirtyLocalDao.insertDirtyItem(
+                DirtyLocalItemEntity(
+                    localPath = path,
+                    syncFolderId = folderId,
+                    eventType = event
+                )
+            )
+        }
+
+        // Debounce sync trigger: Wait 5 seconds after the last local change before syncing
+        synchronized(debounceJobs) {
+            debounceJobs[folderId]?.cancel()
+            debounceJobs[folderId] = managerScope.launch {
+                kotlinx.coroutines.delay(5000)
+                logger.log("로컬 변경 감지됨 - 자동 동기화 트리거 ($folderId)")
+                syncFolder(folderId)
+            }
+        }
     }
     
     /**
@@ -91,6 +152,7 @@ class SyncManager internal constructor(
             syncDirection = direction
         )
         syncFolderDao.insertSyncFolder(folder)
+        setupFolderObserver(folder)
         return folder
     }
     
@@ -161,36 +223,101 @@ class SyncManager internal constructor(
             var errors = 0
             val conflicts = mutableListOf<SyncConflict>()
             
-            // Get local files (now including folders)
-            val localItems = scanLocalFolder(folder.localPath)
+            // Phase 2: Attempt differential sync if token exists
+            if (folder.lastStartPageToken != null) {
+                try {
+                    val changesResult = syncChangesInternal(folder)
+                    uploaded += changesResult.uploaded
+                    downloaded += changesResult.downloaded
+                    skipped += changesResult.skipped
+                    errors += changesResult.errors
+                    conflicts.addAll(changesResult.conflicts)
+                    
+                    logger.log("차분 동기화 완료 (업로드=${changesResult.uploaded}, 다운로드=${changesResult.downloaded}, 에러=${changesResult.errors})", folder.accountEmail)
+                } catch (e: Exception) {
+                    if (isFatalNetworkError(e)) throw e
+                    logger.log("차분 동기화 중 예외 발생: ${e.message}", folder.accountEmail)
+                }
+            }
             
-            // Get all drive files using the new pagination helper
-            val driveItems = driveHelper.listAllFiles(folder.driveFolderId)
+            // Phase 3: Targeted Scan or Full Scan
+            val dirtyLocalItems = dirtyLocalDao.getDirtyItemsByFolder(folderId)
+            val isInitialSync = folder.lastSyncedAt == 0L
+            val isTimeForFullScan = (System.currentTimeMillis() - folder.lastSyncedAt) > 3600000 // 1 hour
             
-            logger.log("스캔 완료: 로컬=${localItems.size}개, 드라이브=${driveItems.size}개", folder.accountEmail)
-            
-            // Calculate total files for progress tracking
-            totalSyncFiles = countAllFiles(folder.localPath, folder.driveFolderId)
-            currentFileIndex.set(0)
-            
-            // Use a unified recursive sync method
-            val result = syncDirectoryRecursive(
-                folder = folder,
-                localPath = folder.localPath,
-                driveFolderId = folder.driveFolderId,
-                localItems = localItems,
-                driveItems = driveItems
-            )
-            
-            uploaded = result.uploaded
-            downloaded = result.downloaded
-            skipped = result.skipped
-            errors = result.errors
-            conflicts.addAll(result.conflicts)
-            
-            // Add stashed uploads to pending list
-            if (result.pendingUploads.isNotEmpty()) {
-                _pendingUploads.value = _pendingUploads.value + result.pendingUploads
+            if (!isInitialSync && !isTimeForFullScan && dirtyLocalItems.isNotEmpty() && folder.lastStartPageToken != null) {
+                logger.log("부분 동기화 모드 (감지된 로컬 변경 건수: ${dirtyLocalItems.size})", folder.accountEmail)
+                val targetedResult = syncDirtyItems(folder, dirtyLocalItems)
+                uploaded += targetedResult.uploaded
+                downloaded += targetedResult.downloaded
+                skipped += targetedResult.skipped
+                errors += targetedResult.errors
+                conflicts.addAll(targetedResult.conflicts)
+                
+                // Clear dirty items after processing
+                dirtyLocalDao.deleteDirtyItemsByFolder(folderId)
+                
+                logger.log("부분 동기화 완료: 업로드=$uploaded, 다운로드=$downloaded, 에러=$errors", folder.accountEmail)
+            } else {
+                if (isTimeForFullScan) logger.log("정기 전체 스캔 실행 시점입니다 (1시간 경과)", folder.accountEmail)
+                
+                // Get local files (now including folders)
+                val localItems = try {
+                    scanLocalFolder(folder.localPath)
+                } catch (e: Exception) {
+                    logger.log("[ERROR] 로컬 폴더 스캔 실패: ${e.message}", folder.accountEmail)
+                    emptyList()
+                }
+                
+                // Get all drive files using the new pagination helper
+                val driveItems = try {
+                    driveHelper.listAllFiles(folder.driveFolderId)
+                } catch (e: Exception) {
+                    if (isFatalNetworkError(e)) throw e
+                    val errorMsg = when (e) {
+                        is java.net.UnknownHostException -> "네트워크 연결이 없거나 Google 서비스에 접속할 수 없습니다 (DNS 오류)"
+                        is java.net.SocketTimeoutException -> "서버 응답 시간 초과"
+                        else -> e.message ?: "드라이브 목록 획득 실패"
+                    }
+                    logger.log("[ERROR] $errorMsg", folder.accountEmail)
+                    errors++
+                    emptyList()
+                }
+                
+                // Calculate total files for progress tracking (Local only for efficiency)
+                totalSyncFiles = countLocalFilesRecursive(folder.localPath)
+                currentFileIndex.set(0)
+                
+                logger.log("스캔 완료: 로컬=${localItems.size}개, 드라이브=${driveItems.size}개 (전체 예상 항목: $totalSyncFiles)", folder.accountEmail)
+                
+                // Use a unified recursive sync method
+                if (localItems.isNotEmpty() || driveItems.isNotEmpty()) {
+                    val result = syncDirectoryRecursive(
+                        folder = folder,
+                        localPath = folder.localPath,
+                        driveFolderId = folder.driveFolderId,
+                        localItems = localItems,
+                        driveItems = driveItems
+                    )
+                    
+                    uploaded += result.uploaded
+                    downloaded += result.downloaded
+                    skipped += result.skipped
+                    errors += result.errors
+                    conflicts.addAll(result.conflicts)
+                    
+                    // Add stashed uploads to pending list
+                    if (result.pendingUploads.isNotEmpty()) {
+                        _pendingUploads.value = _pendingUploads.value + result.pendingUploads
+                    }
+                } // End if (localItems...)
+
+                if (errors > 0) {
+                    logger.log("동기화 초기화 단계에서 일부 오류가 발생했습니다.", folder.accountEmail)
+                }
+                
+                // After successfull full scan, clear dirty items
+                dirtyLocalDao.deleteDirtyItemsByFolder(folderId)
             }
             
             // Update history
@@ -207,6 +334,17 @@ class SyncManager internal constructor(
             // Update folder last sync time
             syncFolderDao.updateLastSyncTime(folderId, System.currentTimeMillis())
             
+            // Phase 2: Get and save the new start page token after full sync
+            try {
+                val newToken = driveHelper.getStartPageToken()
+                if (newToken != null) {
+                    syncFolderDao.updatePageToken(folder.id, newToken)
+                    logger.log("새 Page Token 저장됨: $newToken", folder.accountEmail)
+                }
+            } catch (e: Exception) {
+                logger.log("Page Token 획득 실패: ${e.message}", folder.accountEmail)
+            }
+            
             logger.log("동기화 완료: 업로드=$uploaded, 다운로드=$downloaded, 스킵=$skipped, 에러=$errors, 충돌=${conflicts.size}", folder.accountEmail)
             
             val syncResult = if (conflicts.isNotEmpty() || _pendingUploads.value.isNotEmpty()) {
@@ -218,6 +356,8 @@ class SyncManager internal constructor(
             _lastSyncResult.value = syncResult
             return syncResult
             
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
             val errorMessage = when (e) {
@@ -484,6 +624,20 @@ class SyncManager internal constructor(
                     localItems = subLocalItems,
                     driveItems = subDriveItems
                 )
+                
+                // Track folder record to enable effective differential sync for subfolders
+                if (existingItem == null) {
+                    trackSyncItem(
+                        folder, 
+                        dir, 
+                        driveFile.id, 
+                        driveFile.modifiedTime, 
+                        0L, 
+                        SyncStatus.SYNCED, 
+                        null
+                    )
+                }
+
                 uploaded += subResult.uploaded
                 downloaded += subResult.downloaded
                 skipped += subResult.skipped
@@ -550,15 +704,25 @@ class SyncManager internal constructor(
                         }
                     } else {
                         // Moved to another folder!
-                        logger.log("이동 감지 (Drive): ${localFile.name} -> 다른 폴더로 이동됨", folder.accountEmail)
+                        val targetParentId = driveFileMeta.parentIds.firstOrNull() ?: ""
+                        val targetFolder = syncFolderDao.getSyncFolderByDriveId(targetParentId)
+                        
+                        if (targetFolder != null) {
+                            logger.log("이동 감지 (Drive): ${localFile.name} -> 타깃 폴더(${targetFolder.driveFolderName})로 이동됨. 삭제 보류", folder.accountEmail)
+                            // Keep local file so it can be moved by target folder's sync instead of re-downloading
+                            skipped++
+                        } else {
+                            logger.log("이동 감지 (Drive): ${localFile.name} -> 비동기화 폴더로 이동됨. 로컬 삭제", folder.accountEmail)
+                            if (localFile.delete()) {
+                                syncItemDao.deleteSyncItem(existingItem)
+                            }
+                        }
                     }
                 } catch (e: Exception) {
-                    if (isFatalNetworkError(e)) throw e
-                    // Not on Drive at all or error
-                    logger.log("드라이브에서 삭제됨 감지: ${localFile.name}", folder.accountEmail)
-                    if (localFile.delete()) {
-                        syncItemDao.deleteSyncItem(existingItem)
-                    }
+                    // In the interest of resilience, we log it and continue with next file if possible
+                    errors++
+                    val errorDetail = if (isFatalNetworkError(e)) "(네트워크 오류)" else ""
+                    logger.log("[ERROR] 드라이브 메타데이터 확인 실패 $errorDetail: ${localFile.name}", folder.accountEmail)
                 }
             } else if (localFile.isDirectory) {
                 // New Local Folder
@@ -569,6 +733,9 @@ class SyncManager internal constructor(
                     try {
                         val created = driveHelper.createFolder(localFile.name, driveFolderId)
                         if (created != null) {
+                            // Track folder record
+                            trackSyncItem(folder, localFile, created.id, created.modifiedTime, 0L, SyncStatus.SYNCED, null)
+                            
                             val subLocalItems = scanLocalFolder(localFile.absolutePath)
                             val subResult = syncDirectoryRecursive(folder, localFile.absolutePath, created.id, subLocalItems, emptyList())
                             uploaded += subResult.uploaded; downloaded += subResult.downloaded
@@ -586,19 +753,37 @@ class SyncManager internal constructor(
             } else {
                 // New Local File
                 if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                    val statusMsg = "업로드 대기: ${localFile.name}"
-                    logger.log(statusMsg, folder.accountEmail)
-                    currentStatusMessage = statusMsg
-                    
-                    val pendingUpload = PendingUpload(
-                        folderId = folder.id,
-                        localFile = localFile,
-                        driveFolderId = driveFolderId,
-                        isNewFile = true,
-                        accountEmail = folder.accountEmail
-                    )
-                    pendingUploads.add(pendingUpload)
-                    skipped++ 
+                    if (syncPreferences.autoUploadEnabled) {
+                        val statusMsg = "새 파일 업로드: ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
+                        try {
+                            val created = driveHelper.uploadFile(localFile.absolutePath, localFile.name, driveFolderId)
+                            if (created != null) {
+                                trackSyncItem(folder, localFile, created.id, created.modifiedTime, created.size, SyncStatus.SYNCED, created.md5Checksum)
+                                uploaded++
+                            } else {
+                                errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name}", folder.accountEmail)
+                            }
+                        } catch (e: Exception) {
+                            if (isFatalNetworkError(e)) throw e
+                            errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} (${e.message})", folder.accountEmail)
+                        }
+                    } else {
+                        val statusMsg = "업로드 대기: ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        currentStatusMessage = statusMsg
+                        
+                        val pendingUpload = PendingUpload(
+                            folderId = folder.id,
+                            localFile = localFile,
+                            driveFolderId = driveFolderId,
+                            isNewFile = true,
+                            accountEmail = folder.accountEmail
+                        )
+                        pendingUploads.add(pendingUpload)
+                        skipped++
+                    }
                 } else skipped++
             }
         }
@@ -636,6 +821,11 @@ class SyncManager internal constructor(
         val isLocalUpdated = (existingItem == null || (localDrift > 2000 && localModified > (existingItem.localModifiedAt)) || localSize != (existingItem.localSize))
         val isDriveUpdated = (existingItem == null || (driveDrift > 2000 && driveModified > (existingItem.driveModifiedAt)) || driveSize != (existingItem.driveSize))
         
+        // Optimisation: If both sides match what we have in DB, skip everything including MD5
+        if (existingItem != null && !isLocalUpdated && !isDriveUpdated) {
+            return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+        }
+
         // v1.0.9: New Item Linking - If sizes match exactly, link without sync
         if (existingItem == null && localSize == driveSize) {
             val localMd5 = uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(localFile)
@@ -648,15 +838,19 @@ class SyncManager internal constructor(
             }
         }
 
-        // v1.0.9: Existing Item Swallowing - If both sides match DB size, just update metadata
-        if (existingItem != null && localSize == existingItem.localSize && driveSize == existingItem.driveSize) {
-            if (isLocalUpdated || isDriveUpdated) {
-                val statusMsg = "크기 일치 (내용 변화 없음): ${localFile.name}"
-                logger.log("$statusMsg - 메타데이터만 업데이트", folder.accountEmail)
-                currentStatusMessage = statusMsg
-                updateSyncItem(existingItem, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
+        // v1.0.9 + Phase 2: Content-based skipping (MD5 Match) for existing items
+        // Only do this if at least one side is "updated" metadata-wise
+        if (existingItem != null && localSize == driveSize) {
+            val localMd5 = uk.xmlangel.googledrivesync.util.FileUtils.calculateMd5(localFile)
+            if (localMd5 != null && localMd5 == driveFile.md5Checksum) {
+                if (isLocalUpdated || isDriveUpdated) {
+                    val statusMsg = "내용 일치 (MD5 Match): ${localFile.name}"
+                    logger.log("$statusMsg - 메타데이터만 업데이트", folder.accountEmail)
+                    currentStatusMessage = statusMsg
+                    updateSyncItem(existingItem, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
+                }
+                return RecursiveSyncResult(0, 0, 1, 0, emptyList())
             }
-            return RecursiveSyncResult(0, 0, 1, 0, emptyList())
         }
         
         if (isLocalUpdated || isDriveUpdated) {
@@ -692,19 +886,51 @@ class SyncManager internal constructor(
                 }
                 isLocalUpdated -> {
                     if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
-                        val statusMsg = "업로드 대기 (수정됨): ${localFile.name}"
-                        logger.log(statusMsg, folder.accountEmail)
-                        currentStatusMessage = statusMsg
-                        
-                        val pendingUpload = PendingUpload(
-                            folderId = folder.id,
-                            localFile = localFile,
-                            driveFolderId = driveFile.id, 
-                            isNewFile = false,
-                            driveFileId = existingItem?.driveFileId ?: driveFile.id,
-                            accountEmail = folder.accountEmail
-                        )
-                        return RecursiveSyncResult(0, 0, 1, 0, emptyList(), listOf(pendingUpload))
+                        if (syncPreferences.autoUploadEnabled) {
+                            val statusMsg = "파일 업데이트(업로드): ${localFile.name}"
+                            logger.log(statusMsg, folder.accountEmail)
+                            currentStatusMessage = statusMsg
+                            try {
+                                val driveFileId = existingItem?.driveFileId ?: driveFile.id
+                                val updated = driveHelper.updateFile(driveFileId, localFile.absolutePath, getMimeType(localFile.name))
+                                if (updated != null) {
+                                    updateSyncItem(
+                                        existingItem = existingItem ?: createSyncItem(folder, localFile, driveFileId),
+                                        localFile = localFile,
+                                        driveFileId = updated.id,
+                                        driveModifiedTime = updated.modifiedTime,
+                                        driveSize = updated.size,
+                                        status = SyncStatus.SYNCED,
+                                        md5Checksum = updated.md5Checksum
+                                    )
+                                    uploaded++
+                                } else {
+                                    errors++; logger.log("[ERROR] 파일 업데이트 실패: ${localFile.name}", folder.accountEmail)
+                                }
+                            } catch (e: Exception) {
+                                if (isFatalNetworkError(e)) {
+                                    errors++
+                                    logger.log("[ERROR] 파일 업데이트 치명적 네트워크 오류: ${localFile.name} (${e.message})", folder.accountEmail)
+                                } else {
+                                    errors++
+                                    logger.log("[ERROR] 파일 업데이트 예외 발생: ${localFile.name} (${e.message})", folder.accountEmail)
+                                }
+                            }
+                        } else {
+                            val statusMsg = "업로드 대기 (수정됨): ${localFile.name}"
+                            logger.log(statusMsg, folder.accountEmail)
+                            currentStatusMessage = statusMsg
+                            
+                            val pendingUpload = PendingUpload(
+                                folderId = folder.id,
+                                localFile = localFile,
+                                driveFolderId = driveFile.id, 
+                                isNewFile = false,
+                                driveFileId = existingItem?.driveFileId ?: driveFile.id,
+                                accountEmail = folder.accountEmail
+                            )
+                            return RecursiveSyncResult(0, 0, 1, 0, emptyList(), listOf(pendingUpload))
+                        }
                     } else skipped++
                 }
                 isDriveUpdated -> {
@@ -712,29 +938,35 @@ class SyncManager internal constructor(
                         val statusMsg = "파일 다운로드: ${localFile.name}"
                         logger.log(statusMsg, folder.accountEmail)
                         currentStatusMessage = statusMsg
-                        if (driveHelper.downloadFile(driveFile.id, localFile.absolutePath)) {
-                            downloaded++
-                            updateSyncItem(
-                                existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id, driveFile.md5Checksum),
-                                localFile = localFile,
-                                driveFileId = driveFile.id,
-                                driveModifiedTime = driveFile.modifiedTime,
-                                driveSize = driveFile.size,
-                                status = SyncStatus.SYNCED,
-                                md5Checksum = driveFile.md5Checksum
-                            )
-                        } else {
-                            errors++
-                            logger.log("[ERROR] 파일 업데이트(다운로드) 실패: ${localFile.name}", folder.accountEmail)
+                        try {
+                            if (driveHelper.downloadFile(driveFile.id, localFile.absolutePath)) {
+                                downloaded++
+                                updateSyncItem(
+                                    existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id, driveFile.md5Checksum),
+                                    localFile = localFile,
+                                    driveFileId = driveFile.id,
+                                    driveModifiedTime = driveFile.modifiedTime,
+                                    driveSize = driveFile.size,
+                                    status = SyncStatus.SYNCED,
+                                    md5Checksum = driveFile.md5Checksum
+                                )
+                            } else {
+                                errors++
+                                logger.log("[ERROR] 파일 업데이트(다운로드) 실패: ${localFile.name}", folder.accountEmail)
+                            }
+                        } catch (e: Exception) {
+                             errors++
+                             logger.log("[ERROR] 파일 다운로드 예외 발생: ${localFile.name} (${e.message})", folder.accountEmail)
                         }
                     } else skipped++
                 }
                 else -> skipped++
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            if (isFatalNetworkError(e)) throw e
             errors++
-            logger.log("[ERROR] 파일 처리 실패: ${localFile.name} (${e.message})", folder.accountEmail)
+            logger.log("[ERROR] 파일 쌍 처리 중 치명적 오류: ${localFile.name} (${e.message})", folder.accountEmail)
         }
         return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, emptyList())
     }
@@ -751,46 +983,21 @@ class SyncManager internal constructor(
     /**
      * Count all files and folders recursively to get total sync count
      */
-    private suspend fun countAllFiles(localPath: String, driveFolderId: String): Int {
-        val localFiles = scanLocalFolder(localPath)
-        val driveFiles = driveHelper.listAllFiles(driveFolderId)
-        
-        val localMap = localFiles.associateBy { it.name }
-        val driveMap = driveFiles.associateBy { it.name }
-        val allNames = (localMap.keys + driveMap.keys).toSet()
+    /**
+     * Count local files recursively using efficient walking for progress estimation
+     */
+    private fun countLocalFilesRecursive(path: String): Int {
+        val root = File(path)
+        if (!root.exists()) return 0
         
         var count = 0
-        for (name in allNames) {
-            val localFile = localMap[name]
-            val driveFile = driveMap[name]
-            
-            count++ // Count current item
-            
-            // If it's a directory, count its contents too
-            if ((localFile != null && localFile.isDirectory) || (driveFile != null && driveFile.isFolder)) {
-                val subDriveId = driveFile?.id
-                if (subDriveId != null) {
-                    val subLocalPath = File(localPath, name).absolutePath
-                    count += countAllFiles(subLocalPath, subDriveId)
-                } else if (localFile != null) {
-                    // Local directory only, but we don't have Drive ID yet
-                    // To be accurate, we'd need to assume it'll be created
-                    // For now, let's just count local sub-items
-                    count += countLocalFilesRecursive(localFile)
-                }
+        try {
+            // Using Kotlin's walkTopDown() which is more efficient for deep hierarchies
+            root.walkTopDown().forEach { _ ->
+                count++
             }
-        }
-        return count
-    }
-
-    private fun countLocalFilesRecursive(file: File): Int {
-        var count = 0
-        val contents = file.listFiles() ?: return 0
-        for (item in contents) {
-            count++
-            if (item.isDirectory) {
-                count += countLocalFilesRecursive(item)
-            }
+        } catch (e: Exception) {
+            // Fallback: if walk fails, count what we can
         }
         return count
     }
@@ -891,5 +1098,206 @@ class SyncManager internal constructor(
     
     private fun getMimeType(fileName: String): String {
         return uk.xmlangel.googledrivesync.util.MimeTypeUtil.getMimeType(fileName)
+    }
+
+    /**
+     * Phase 3: Targeted synchronization of specific dirty local paths
+     */
+    private suspend fun syncDirtyItems(folder: SyncFolderEntity, dirtyItems: List<DirtyLocalItemEntity>): RecursiveSyncResult {
+        var uploaded = 0; var downloaded = 0; var skipped = 0; var errors = 0
+        val conflicts = mutableListOf<SyncConflict>()
+        val pendingUploads = mutableListOf<PendingUpload>()
+        
+        // Use a set to avoid processing the same path multiple times
+        val processedPaths = mutableSetOf<String>()
+        
+        for (dirtyItem in dirtyItems) {
+            val path = dirtyItem.localPath
+            if (processedPaths.contains(path)) continue
+            processedPaths.add(path)
+            
+            try {
+                val localFile = File(path)
+                val existingItem = syncItemDao.getSyncItemByLocalPath(path)
+                
+                if (localFile.exists()) {
+                    // Item exists locally - might be new or updated
+                    val driveFile = if (existingItem?.driveFileId != null) {
+                        driveHelper.getFile(existingItem.driveFileId)
+                    } else {
+                        // Not in DB, try to find on Drive by name
+                        val parentFolderId = findDriveParentFolder(folder, localFile)
+                        if (parentFolderId != null) {
+                            driveHelper.findFile(localFile.name, parentFolderId)
+                        } else null
+                    }
+                    
+                    if (driveFile != null) {
+                        val result = processFilePair(folder, localFile, driveFile, existingItem)
+                        uploaded += result.uploaded
+                        downloaded += result.downloaded
+                        skipped += result.skipped
+                        errors += result.errors
+                        conflicts.addAll(result.conflicts)
+                        pendingUploads.addAll(result.pendingUploads)
+                    } else {
+                        // New local file - upload
+                        val parentFolderId = findDriveParentFolder(folder, localFile) ?: folder.driveFolderId
+                        val uploadedFile = driveHelper.uploadFile(localFile.absolutePath, getMimeType(localFile.name), parentFolderId)
+                        if (uploadedFile != null) {
+                            trackSyncItem(folder, localFile, uploadedFile.id, uploadedFile.modifiedTime, uploadedFile.size, SyncStatus.SYNCED, uploadedFile.md5Checksum)
+                            uploaded++
+                        } else {
+                            errors++
+                        }
+                    }
+                } else if (existingItem != null) {
+                    // File deleted locally - handle deletion
+                    if (existingItem.driveFileId != null) {
+                        // TODO: Implement proper deletion sync if needed
+                        // For now, we might just mark it or delete from Drive
+                        // driveHelper.deleteFile(existingItem.driveFileId)
+                        syncItemDao.deleteSyncItem(existingItem)
+                        logger.log("로컬 삭제 감지됨: ${existingItem.fileName} (DB에서 제거)", folder.accountEmail)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.log("[ERROR] 타겟 항목 처리 예외 (${path}): ${e.message}", folder.accountEmail)
+                errors++
+            }
+        }
+        
+        return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, pendingUploads)
+    }
+
+    private suspend fun findDriveParentFolder(folder: SyncFolderEntity, file: File): String? {
+        val parentFile = file.parentFile ?: return null
+        if (parentFile.absolutePath == folder.localPath) return folder.driveFolderId
+        
+        // Check if parent is in DB
+        val parentItem = syncItemDao.getSyncItemByLocalPath(parentFile.absolutePath)
+        return parentItem?.driveFileId
+    }
+
+    /**
+     * Phase 2: Incremental sync using Changes API (Internal implementation)
+     */
+    private suspend fun syncChangesInternal(folder: SyncFolderEntity): RecursiveSyncResult {
+        val pageToken = folder.lastStartPageToken ?: return RecursiveSyncResult(0, 0, 0, 1, emptyList())
+        logger.log("차분 동기화 시작 (Token: $pageToken)", folder.accountEmail)
+        
+        var uploaded = 0; var downloaded = 0; var skipped = 0; var errors = 0
+        val conflicts = mutableListOf<SyncConflict>()
+        val pendingUploads = mutableListOf<PendingUpload>()
+        
+        // Build set of all known folder IDs to check for descendants
+        val knownFolderIds = mutableSetOf(folder.driveFolderId)
+        
+        // Add all folders already tracked in the DB for this sync folder
+        // This ensures subfolders created in previous sessions are recognized
+        try {
+            val dbFolders = syncItemDao.getSyncItemsByFolder(folder.id).first()
+                .filter { it.mimeType == DriveServiceHelper.MIME_TYPE_FOLDER && it.driveFileId != null }
+                .map { it.driveFileId!! }
+            knownFolderIds.addAll(dbFolders)
+            if (dbFolders.isNotEmpty()) {
+                logger.log("차분 동기화: DB에서 ${dbFolders.size}개의 하위 폴더 로드됨", folder.accountEmail)
+            }
+        } catch (e: Exception) {
+            logger.log("차분 동기화 폴더 목록 로드 실패: ${e.message}", folder.accountEmail)
+        }
+        
+        try {
+            var currentPageToken = pageToken
+            var nextStartPageToken: String? = null
+            
+            do {
+                val result = driveHelper.getChanges(currentPageToken)
+                for (change in result.changes) {
+                    try {
+                        val driveFile = change.file
+                        val driveFileId = change.fileId
+                        
+                        if (change.removed) {
+                            val existingItem = syncItemDao.getSyncItemByDriveId(driveFileId)
+                            if (existingItem != null) {
+                                val localFile = File(existingItem.localPath)
+                                logger.log("서버 삭제 감지 (API): ${existingItem.fileName}", folder.accountEmail)
+                                if (localFile.exists() ) {
+                                    if (localFile.isDirectory) {
+                                        localFile.deleteRecursively()
+                                    } else {
+                                        localFile.delete()
+                                    }
+                                    syncItemDao.deleteSyncItem(existingItem)
+                                    skipped++
+                                }
+                            }
+                        } else if (driveFile != null) {
+                            if (driveFile.isFolder) {
+                                // Potentially add to known folders if it's within our sync hierarchy
+                                if (driveFile.parentIds.any { it in knownFolderIds }) {
+                                    knownFolderIds.add(driveFile.id)
+                                }
+                            }
+
+                            val existingItem = syncItemDao.getSyncItemByDriveId(driveFileId)
+                            if (existingItem != null) {
+                                val localFile = File(existingItem.localPath)
+                                val pairResult = processFilePair(folder, localFile, driveFile, existingItem)
+                                uploaded += pairResult.uploaded; downloaded += pairResult.downloaded
+                                skipped += pairResult.skipped; errors += pairResult.errors
+                                conflicts.addAll(pairResult.conflicts)
+                                pendingUploads.addAll(pairResult.pendingUploads)
+                            } else if (driveFile.parentIds.any { it in knownFolderIds }) {
+                                // Match by parent: it's a new item in a known folder
+                                // We need to find the local path for this parent
+                                val parentId = driveFile.parentIds.firstOrNull { it in knownFolderIds }
+                                val parentPath = if (parentId == folder.driveFolderId) {
+                                    folder.localPath
+                                } else {
+                                    syncItemDao.getSyncItemByDriveId(parentId!!)?.localPath
+                                }
+                                
+                                if (parentPath != null) {
+                                    val localFile = File(parentPath, driveFile.name)
+                                    val pairResult = if (driveFile.isFolder) {
+                                        // It's a new folder, create it
+                                        if (!localFile.exists()) localFile.mkdirs()
+                                        trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, 0L, SyncStatus.SYNCED, null)
+                                        knownFolderIds.add(driveFile.id)
+                                        RecursiveSyncResult(0, 0, 1, 0, emptyList())
+                                    } else {
+                                        processFilePair(folder, localFile, driveFile, null)
+                                    }
+                                    uploaded += pairResult.uploaded; downloaded += pairResult.downloaded
+                                    skipped += pairResult.skipped; errors += pairResult.errors
+                                    conflicts.addAll(pairResult.conflicts)
+                                    pendingUploads.addAll(pairResult.pendingUploads)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        errors++
+                        logger.log("[ERROR] 차분 동기화 개별 항목 처리 실패: ${e.message}", folder.accountEmail)
+                    }
+                }
+                currentPageToken = result.nextPageToken ?: ""
+                nextStartPageToken = result.newStartPageToken
+            } while (currentPageToken.isNotEmpty())
+            
+            if (nextStartPageToken != null) {
+                syncFolderDao.updatePageToken(folder.id, nextStartPageToken)
+            }
+            
+            return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, pendingUploads)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.log("[ERROR] 차분 동기화 실패: ${e.message}", folder.accountEmail)
+            return RecursiveSyncResult(uploaded, downloaded, skipped, errors + 1, conflicts, pendingUploads)
+        }
     }
 }

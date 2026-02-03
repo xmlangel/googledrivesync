@@ -75,6 +75,7 @@ fun NavGraph(
     LaunchedEffect(activeAccount) {
         if (activeAccount != null) {
             driveHelper.initializeDriveService(activeAccount?.email)
+            syncManager.initialize()
         }
     }
     

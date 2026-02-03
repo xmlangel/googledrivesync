@@ -20,6 +20,7 @@ data class SyncFolderEntity(
     val syncDirection: SyncDirection = SyncDirection.BIDIRECTIONAL,
     val isEnabled: Boolean = true,
     val lastSyncedAt: Long = 0,
+    val lastStartPageToken: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -64,4 +65,16 @@ data class SyncHistoryEntity(
     val filesSkipped: Int = 0,
     val errors: Int = 0,
     val status: String = "IN_PROGRESS"
+)
+
+/**
+ * Entity for tracking real-time local file changes (Dirty Tracking)
+ */
+@Entity(tableName = "dirty_local_items")
+data class DirtyLocalItemEntity(
+    @PrimaryKey
+    val localPath: String,
+    val syncFolderId: String,
+    val eventType: Int, // From FileObserver events
+    val detectedAt: Long = System.currentTimeMillis()
 )

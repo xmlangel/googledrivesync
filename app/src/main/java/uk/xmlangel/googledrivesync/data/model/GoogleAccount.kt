@@ -32,3 +32,11 @@ enum class SyncDirection {
     UPLOAD_ONLY,
     DOWNLOAD_ONLY
 }
+
+/**
+ * Represents the application version information
+ */
+data class AppVersion(
+    val versionName: String,
+    val versionCode: Long
+)

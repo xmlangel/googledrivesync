@@ -17,6 +17,7 @@ import org.robolectric.annotation.Config
 import uk.xmlangel.googledrivesync.data.local.SyncDatabase
 import uk.xmlangel.googledrivesync.data.local.SyncFolderDao
 import uk.xmlangel.googledrivesync.data.local.SyncFolderEntity
+import uk.xmlangel.googledrivesync.data.local.DirtyLocalDao
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
@@ -27,6 +28,7 @@ class SyncNotificationFrequencyTest {
     private val mockSyncManager = mockk<SyncManager>(relaxed = true)
     private val mockDatabase = mockk<SyncDatabase>(relaxed = true)
     private val mockFolderDao = mockk<SyncFolderDao>(relaxed = true)
+    private val mockDirtyLocalDao = mockk<DirtyLocalDao>(relaxed = true)
 
     @Before
     fun setUp() {
@@ -41,6 +43,7 @@ class SyncNotificationFrequencyTest {
         mockkObject(SyncDatabase.Companion)
         every { SyncDatabase.getInstance(any()) } returns mockDatabase
         every { mockDatabase.syncFolderDao() } returns mockFolderDao
+        every { mockDatabase.dirtyLocalDao() } returns mockDirtyLocalDao
     }
 
     @Test

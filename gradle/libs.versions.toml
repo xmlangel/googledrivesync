@@ -25,6 +25,7 @@ coil = "2.7.0"
 mockk = "1.13.13"
 turbine = "1.2.0"
 robolectric = "4.14.1"
+jacoco = "0.8.12"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

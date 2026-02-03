@@ -46,12 +46,17 @@ class SyncMoveDetectionTest {
     @MockK(relaxUnitFun = true)
     lateinit var mockLogger: SyncLogger
 
+    @MockK
+    lateinit var mockDirtyLocalDao: DirtyLocalDao
+
     private lateinit var syncManager: SyncManager
 
     @Before
     fun setUp() {
         MockKAnnotations.init(this)
         context = ApplicationProvider.getApplicationContext()
+        mockDirtyLocalDao = mockk(relaxed = true)
+        every { mockDatabase.dirtyLocalDao() } returns mockDirtyLocalDao
         
         syncManager = SyncManager(
             context = context,
@@ -60,6 +65,7 @@ class SyncMoveDetectionTest {
             syncFolderDao = mockSyncFolderDao,
             syncItemDao = mockSyncItemDao,
             historyDao = mockHistoryDao,
+            dirtyLocalDao = mockDirtyLocalDao,
             syncPreferences = mockSyncPreferences,
             logger = mockLogger
         )
@@ -170,6 +176,7 @@ class SyncMoveDetectionTest {
         
         // Run sync
         coEvery { mockSyncFolderDao.getSyncFolderById(folderAId) } returns folderA
+        coEvery { mockSyncFolderDao.getSyncFolderByDriveId("drive-b") } returns SyncFolderEntity("folder-b-id", "acc", "test@test.com", "/path/to/B", "drive-b", "Drive B")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
         coEvery { mockDriveHelper.listAllFiles("drive-a") } returns driveItems
         coEvery { mockHistoryDao.insertHistory(any()) } returns 1L

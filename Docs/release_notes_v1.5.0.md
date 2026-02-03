@@ -29,5 +29,3 @@ Google Drive Sync v1.5.0 버전이 릴리즈되었습니다. 이번 버전은 v1
 - 동기화 핵심 엔진(`SyncManager`, `SyncWorker`)에 대한 테스트 커버리지 대폭 확대.
 - 안드로이드 백그라운드 제약 환경(`WorkManager`)에서의 동작 안정성 검증 완료.
 
----
-© 2026 Google Drive Sync Team

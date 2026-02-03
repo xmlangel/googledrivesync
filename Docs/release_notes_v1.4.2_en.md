@@ -21,6 +21,3 @@ Google Drive Sync v1.4.2 has been released. This update focuses on user interfac
 ## Technical Changes
 - Performed project-wide refactoring and test optimization to enhance code quality.
 - Added documentation for generating JaCoCo reports to improve developer experience.
-
----
-© 2026 Google Drive Sync Team

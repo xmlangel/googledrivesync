@@ -23,4 +23,3 @@ Google Drive Sync v1.4.2 버전이 릴리즈되었습니다. 이번 업데이트
 - JaCoCo 리포트 생성 가이드 문서를 추가하여 개발 편의성을 높였습니다.
 
 ---
-© 2026 Google Drive Sync Team

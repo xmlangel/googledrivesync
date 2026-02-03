@@ -207,13 +207,20 @@ class DriveServiceHelper(private val context: Context) {
             
             val outputStream: OutputStream = FileOutputStream(destinationPath)
             
-            // 2. Handle Google Docs (Fix for 403 error)
+            // 2. Handle Non-Downloadable Google types (shortcuts, forms, etc.)
+            if (isNonDownloadable(mimeType)) {
+                // Log and skip instead of failing
+                // This prevents 400/403 errors for types that cannot be exported or downloaded
+                return@withContext true
+            }
+
+            // 3. Handle Google Docs (Export)
             if (isGoogleDoc(mimeType)) {
                 val exportMimeType = getExportMimeType(mimeType)
                 getDrive().files().export(fileId, exportMimeType)
                     .executeMediaAndDownloadTo(outputStream)
             } else {
-                // Normal binary file
+                // 4. Normal binary file or unknown native type - try original format download
                 getDrive().files().get(fileId)
                     .executeMediaAndDownloadTo(outputStream)
             }
@@ -223,8 +230,19 @@ class DriveServiceHelper(private val context: Context) {
         }
 
     private fun isGoogleDoc(mimeType: String?): Boolean {
-        return mimeType?.startsWith("application/vnd.google-apps.") == true &&
-                mimeType != MIME_TYPE_FOLDER
+        return mimeType == "application/vnd.google-apps.document" ||
+                mimeType == "application/vnd.google-apps.spreadsheet" ||
+                mimeType == "application/vnd.google-apps.presentation" ||
+                mimeType == "application/vnd.google-apps.drawing" ||
+                mimeType == "application/vnd.google-apps.script"
+    }
+
+    private fun isNonDownloadable(mimeType: String?): Boolean {
+        return mimeType == "application/vnd.google-apps.folder" ||
+                mimeType == "application/vnd.google-apps.shortcut" ||
+                mimeType == "application/vnd.google-apps.map" ||
+                mimeType == "application/vnd.google-apps.form" ||
+                mimeType == "application/vnd.google-apps.site"
     }
 
     private fun getExportMimeType(googleMimeType: String?): String {
@@ -234,7 +252,7 @@ class DriveServiceHelper(private val context: Context) {
             "application/vnd.google-apps.presentation" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             "application/vnd.google-apps.drawing" -> "image/png"
             "application/vnd.google-apps.script" -> "application/vnd.google-apps.script+json"
-            else -> "application/pdf"
+            else -> "application/pdf" // Should not be reached with refined isGoogleDoc
         }
     }
     

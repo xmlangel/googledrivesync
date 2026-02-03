@@ -9,10 +9,22 @@ An Android application for bidirectional synchronization between local folders a
 ## Features
 
 - **Bidirectional Sync**: Keeps your local and Google Drive folders in perfect harmony.
-- **Multiple Sync Pairs**: Configure multiple folders to sync with different Google Drive locations.
-- **Conflict Resolution**: Choose how to handle conflicts (Use Local, Use Drive, or Keep Both).
-- **Background Sync**: Automated synchronization using Android WorkManager.
-- **Material3 UI**: Modern, clean interface built with Jetpack Compose.
+- **Differential Sync (Changes API)**: Smartly tracks changes on Google Drive for lightning-fast scanning even with large amounts of files.
+- **Real-time Change Detection (Dirty Tracking)**: Immediately detects local file changes to efficiently upload only necessary files.
+- **Content Verification (MD5)**: Ensures data integrity by verifying file contents (MD5), not just timestamps.
+- **Advanced Conflict Resolution**:
+    - **Keep Both**: Prevents data loss by keeping a local copy and downloading the server version.
+    - **User Choice**: Set priorities (Local/Drive) or decide manually for each conflict.
+- **Multiple Sync Pairs**: Configure multiple local folders to sync with different Google Drive locations.
+- **Background Service**: Reliable automated synchronization using Android WorkManager, even when the app is closed.
+- **Modern UI**: Intuitive and beautiful design built with Jetpack Compose and Material3.
+
+## Latest Updates (v1.5.0)
+
+- **Performance Optimization**: Significantly reduced battery and data usage with the Dirty Tracking architecture.
+- **Enhanced Stability**: Strengthened design to maintain database integrity during network errors or coroutine cancellations.
+- **Refined Conflict Resolution**: Added 'Keep Both' feature and completed comprehensive test verification.
+- **Detailed Release Notes**: Available at [Docs/release_notes_v1.5.0_en.md](Docs/release_notes_v1.5.0_en.md).
 
 ## How to Build
 

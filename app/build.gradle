@@ -168,4 +168,62 @@ project.afterEvaluate {
             "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec"
         ]))
     }
+
+    // Ensure it runs after unit tests
+    tasks.named('testDebugUnitTest').configure {
+        finalizedBy 'patchJUnitXml'
+    }
 }
+
+// Task to patch JUnit XML with metadata extracted from stdout
+tasks.register('patchJUnitXml') {
+    doLast {
+        def resultsDir = file("${project.buildDir}/test-results/testDebugUnitTest")
+        if (!resultsDir.exists()) return
+
+        resultsDir.eachFileMatch(~/TEST-.*\.xml/) { xmlFile ->
+            if (xmlFile.length() == 0) return
+            def xmlText = xmlFile.getText("UTF-8")
+            def xml = new groovy.xml.XmlParser().parseText(xmlText)
+            
+            def allMetadata = [:] // testName -> [key: value]
+            
+            xmlText.eachLine { line ->
+                def matcher = (line =~ /\[METADATA:(.*?):(.*?)=(.*?)\]/)
+                if (matcher.find()) {
+                    matcher.each { match ->
+                        def testName = match[1].trim()
+                        def key = match[2].trim()
+                        def value = match[3].trim()
+                        if (!allMetadata[testName]) allMetadata[testName] = [:]
+                        allMetadata[testName][key] = value
+                    }
+                }
+            }
+
+            def testcases = xml.depthFirst().findAll { it.name() == 'testcase' }
+            testcases.each { testcase ->
+                def testName = testcase.attribute('name').toString()
+                def metadata = allMetadata[testName]
+                if (metadata) {
+                    testcase.children().findAll { it.name() == 'properties' }.each { 
+                        testcase.children().remove(it) 
+                    }
+                    
+                    def props = new Node(null, 'properties')
+                    metadata.each { key, value ->
+                        new Node(props, 'property', [name: key.toLowerCase(), value: value])
+                    }
+                    testcase.children().add(0, props)
+                }
+            }
+            
+            xmlFile.withPrintWriter("UTF-8") { pw ->
+                def printer = new groovy.xml.XmlNodePrinter(pw)
+                printer.preserveWhitespace = true
+                printer.print(xml)
+            }
+        }
+    }
+}
+

@@ -18,6 +18,9 @@ import uk.xmlangel.googledrivesync.data.local.*
 import uk.xmlangel.googledrivesync.data.model.SyncStatus
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.util.SyncLogger
+import uk.xmlangel.googledrivesync.util.TestMetadata
+import uk.xmlangel.googledrivesync.util.TestMetadataRule
+import org.junit.Rule
 import java.io.File
 import java.util.*
 
@@ -50,6 +53,9 @@ class SyncManagerTest {
     private lateinit var mockLogger: SyncLogger
 
     private lateinit var syncManager: SyncManager
+
+    @get:Rule
+    val metadataRule = TestMetadataRule()
 
     @Before
     fun setUp() {
@@ -93,17 +99,27 @@ class SyncManagerTest {
     }
 
     @Test
+    @TestMetadata(
+        description = "서비스 초기화 검증",
+        step = "1. DriveServiceHelper 목킹 | 2. initialize() 호출 | 3. 반환값 확인",
+        expected = "DriveServiceHelper가 성공하면 true를 반환한다"
+    )
     fun `initialize returns true when drive helper initializes successfully`() {
-        println("Testing SyncManager initialization...")
+        println("설명: 서비스 초기화 검증 | 예상결과: true | 실제결과: 준비 중...")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
         val result = syncManager.initialize()
-        assertTrue(result)
-        println("  SyncManager initialized successfully as expected.")
+        println("설명: 서비스 초기화 검증 | 예상결과: true | 실제결과: $result")
+        assertTrue("서비스 초기화가 실패했습니다. (예상: true, 실제: $result)", result)
     }
 
     @Test
+    @TestMetadata(
+        description = "로컬 우선 해결 정책 검증",
+        step = "1. 충돌 항목 생성 | 2. resolveConflict(USE_LOCAL) 호출 | 3. 드라이브 업데이트 및 DB 상태 확인",
+        expected = "드라이브 파일이 업데이트되고 DB 상태가 SYNCED로 변경되어야 함"
+    )
     fun `resolveConflict USE_LOCAL updates status and calls driveHelper`() = runBlocking {
-        println("Testing conflict resolution with USE_LOCAL policy...")
+        println("설명: 로컬 우선 해결 정책 검증 | 예상결과: true | 실제결과: 시작")
         val syncItem = SyncItemEntity(
             id = "test-id",
             syncFolderId = "folder-id",
@@ -120,7 +136,6 @@ class SyncManagerTest {
             status = SyncStatus.CONFLICT
         )
         val conflict = SyncConflict(syncItem, "test.txt", 1000L, 100L, "test.txt", 1000L, 100L)
-        println("  Created conflict situation for test.txt (CONFLICT status)")
         
         val mockDriveItem = mockk<uk.xmlangel.googledrivesync.data.drive.DriveItem>()
         coEvery { mockDriveHelper.updateFile(any(), any(), any()) } returns mockDriveItem
@@ -128,12 +143,10 @@ class SyncManagerTest {
         
         val result = syncManager.resolveConflict(conflict, ConflictResolution.USE_LOCAL)
         
-        assertTrue(result)
-        println("  resolveConflict(USE_LOCAL) returned true")
+        println("설명: 로컬 우선 해결 정책 검증 | 예상결과: true | 실제결과: $result")
+        assertTrue("충돌 해결 결과가 false입니다.", result)
         coVerify { mockDriveHelper.updateFile("drive-id", "/tmp/test.txt", any()) }
-        println("  Verified updatedFile was called on Drive (uploading local).")
         coVerify { mockSyncItemDao.updateItemStatus("test-id", SyncStatus.SYNCED) }
-        println("  Verified local DB status was updated to SYNCED.")
     }
 
     @Test

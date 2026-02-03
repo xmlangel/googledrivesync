@@ -603,6 +603,13 @@ class SyncManager internal constructor(
                 val subLocalPath = if (localFile != null) localFile.absolutePath else File(localPath, subLocalName).absolutePath
                 val dir = File(subLocalPath)
                 
+                // TYPE CHECK: If drive is folder but local is file, we cannot sync this branch
+                if (dir.exists() && !dir.isDirectory) {
+                    errors++
+                    logger.log("[ERROR] 타입 불일치 (드라이브: 폴더, 로컬: 파일): ${dir.name}. 동기화를 건너뜁니다.", folder.accountEmail)
+                    continue
+                }
+
                 if (!dir.exists()) {
                     if (syncPreferences.defaultSyncDirection != SyncDirection.UPLOAD_ONLY) {
                         val statusMsg = "폴더 생성: ${driveFile.name}"
@@ -648,6 +655,12 @@ class SyncManager internal constructor(
             } else {
                 // File Sync
                 if (localFile != null) {
+                    // TYPE CHECK: If drive is file but local is directory, we cannot sync this item
+                    if (localFile.isDirectory) {
+                        errors++
+                        logger.log("[ERROR] 타입 불일치 (드라이브: 파일, 로컬: 폴더): ${localFile.name}. 동기화를 건너뜁니다.", folder.accountEmail)
+                        continue
+                    }
                     val syncResult = processFilePair(folder, localFile, driveFile, existingItem)
                     uploaded += syncResult.uploaded
                     downloaded += syncResult.downloaded

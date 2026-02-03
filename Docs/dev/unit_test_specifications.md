@@ -4,57 +4,118 @@
 
 ---
 
-## 1. MimeTypeUtilTest
+## 1. UI & interaction 테스트 (Compose UI + Robolectric)
 
-파일 확장자를 기반으로 올바른 MIME 타입을 반환하는지 검증합니다.
+사용자 인터페이스 요소의 올바른 렌더링과 상호작용 로직을 검증합니다.
+
+### 1.1 VersionDisplayTest
+앱의 여러 화면에서 버전 정보가 올바른 형식으로 일관되게 표시되는지 확인합니다.
 
 | 테스트 메서드 | 테스트 목적 | 검증 내용 |
 | :--- | :--- | :--- |
-| `getMimeType returns correct image types` | 이미지 파일 매핑 확인 | .jpg, .JPEG, .png, .gif 확장자에 대해 `image/*` 타입을 정확히 반환하는지 확인 |
-| `getMimeType returns correct document types` | 문서 파일 매핑 확인 | .pdf, .doc, .docx, .xls, .xlsx, .txt 확장자에 대해 올바른 `application/*` 또는 `text/plain` 타입을 반환하는지 확인 |
-| `getMimeType returns correct media types` | 미디어 파일 매핑 확인 | .mp3, .mp4 확장자에 대해 오디오/비디오 타입을 정확히 반환하는지 확인 |
-| `getMimeType returns correct obsidian and modern types` | Obsidian 및 최신 포맷 매핑 확인 | .md, .canvas, .svg, .webp 및 다양한 추가 미디어 확장자에 대해 정확한 MIME 타입을 반환하는지 확인 |
-| `getMimeType returns default type for unknown extensions` | 예외 상황 처리 확인 | 알 수 없는 확장자나 확장자가 없는 파일에 대해 기본값(`application/octet-stream`)을 반환하는지 확인 |
+| `accountScreen_displaysCorrectVersion` | 계정 화면 버전 표시 | 계정 선택 화면 상단에 정확한 버전 문자열이 포함되었는지 확인 |
+| `dashboardScreen_displaysCorrectVersion` | 대시보드 버전 표시 | 메인 대시보드 화면 상단에 정확한 버전 문자열이 표시되는지 확인 |
+| `syncSettingsScreen_displaysCorrectVersion` | 설정 화면 버전 표시 | 동기화 설정 화면 하단에 버전 정보가 존재하는지 확인 |
+
+### 1.2 DashboardTerminationTest
+앱 종료 시의 동작과 사용자 안내 다이얼로그의 노출 여부를 검증합니다.
+
+| 테스트 메서드 | 테스트 목적 | 검증 내용 |
+| :--- | :--- | :--- |
+| `dashboardScreen_showsExitButton` | 종료 버튼 노출 확인 | 대시보드 우측 상단에 앱 종료 아이콘이 존재하는지 확인 |
+| `dashboardScreen_showsExitConfirmationDialog` | 종료 확인 다이얼로그 | 종료 버튼 클릭 시 확인 다이얼로그 및 백그라운드 전환 안내 문구가 표시되는지 확인 |
 
 ---
 
-## 2. SyncManagerTest (Robolectric)
+## 2. 핵심 동기화 및 백그라운드 로직 (JUnit + MockK)
 
-핵심 동기화 관리 로직과 충돌 해결 정책을 검증합니다. 모의 객체(MockK)를 통해 외부 의존성을 제어합니다.
+데이터 동기화의 핵심 알고리즘과 백그라운드 작업 예약 로직을 검증합니다.
+
+### 2.1 SyncManagerTest
+핵심 동기화 관리 로직과 충돌 해결 정책을 검증합니다.
 
 | 테스트 메서드 | 테스트 목적 | 검증 내용 |
 | :--- | :--- | :--- |
-| `initialize` | 서비스 초기화 검증 | `DriveServiceHelper`가 성공적으로 초기화될 때 `SyncManager`의 초기화 상태가 `true`인지 확인 |
-| `resolveConflict USE_LOCAL` | 로컬 우선 해결 정책 검증 | 사용자가 '로컬 유지'를 선택한 경우, 드라이브에 파일을 업로드하고 DB 상태를 `SYNCED`로 업데이트하는지 확인 |
-| `resolveConflict USE_DRIVE` | 드라이브 우선 해결 정책 검증 | 사용자가 '드라이브 유지'를 선택한 경우, 파일을 다운로드하고 DB 상태를 `SYNCED`로 업데이트하는지 확인 |
+| `initialize` | 서비스 초기화 검증 | DriveServiceHelper가 성공적으로 초기화될 때 SyncManager의 상태 변화 확인 |
+| `resolveConflict USE_LOCAL` | 로컬 우선 해결 정책 | 사용자가 '로컬 유지' 선택 시 업로드 및 DB 업데이트 동작 확인 |
+| `resolveConflict USE_DRIVE` | 드라이브 우선 해결 정책 | 사용자가 '드라이브 유지' 선택 시 다운로드 및 DB 업데이트 동작 확인 |
+
+### 2.2 SyncMoveDetectionTest
+파일 이동 감지 및 MD5 기반의 효율적인 동기화 로직을 검증합니다.
+
+| 테스트 메서드 | 테스트 목적 | 검증 내용 |
+| :--- | :--- | :--- |
+| `detects cross-folder move` | 폴더 간 이동 감지 | 드라이브 내에서 파일이 이동된 경우 로컬에서도 해당 위치로 파일을 이동시키는지 확인 |
+| `avoids deletion on move` | 삭제 방지 로직 | 파일이 다른 폴더로 이동된 경우를 감지하여 단순히 로컬 파일을 삭제하지 않고 유지하는지 확인 |
+| `links by MD5` | MD5 기반 자동 연결 | 파일명이나 크기가 같더라도 MD5 해시가 일치할 때만 동기화된 상태로 연결하는지 확인 |
+
+### 2.3 SyncWorkerTest & NotificationFrequency
+WorkManager 연동 및 알림 노출 빈도를 최적화하는 로직을 검증합니다.
+
+| 테스트 메서드 | 테스트 목적 | 검증 내용 |
+| :--- | :--- | :--- |
+| `doWork calls syncFolder` | 백그라운드 작업 수행 | WorkManager에 의해 모든 활성화된 폴더에 대해 동기화 요청이 전달되는지 확인 |
+| `notification frequency` | 알림 스팸 방지 | 동기화 완료 시 알림이 중복으로 과도하게 호출되지 않는지(최대 2회 이내) 확인 |
+
+### 2.4 RecursiveFileObserverTest
+로컬 파일 시스템의 변경 사항을 실시간으로 감지하는 기능을 검증합니다.
+
+| 테스트 메서드 | 테스트 목적 | 검증 내용 |
+| :--- | :--- | :--- |
+| `testDetectsFileCreation` | 파일 생성 감지 | 루트 폴더 및 하위 폴더에서 새 파일이 생성될 때 이벤트를 정확히 포착하는지 확인 |
 
 ---
 
-## 3. SyncDaoTest (Robolectric + In-memory DB)
+## 3. 유틸리티 및 데이터 모델 테스트
 
-Room 데이터베이스의 쿼리 신뢰성과 데이터 정합성을 검증합니다.
+도우미 클래스들과 데이터 모델의 정합성을 검증합니다.
+
+### 3.1 AppVersionUtilTest
+다양한 Android SDK 버전에서의 버전 문자열 추출 로직을 검증합니다.
 
 | 테스트 메서드 | 테스트 목적 | 검증 내용 |
 | :--- | :--- | :--- |
-| `deleteFoldersByAccount` | 데이터 정리 로직 검증 | 특정 계정을 삭제할 때 해당 계정에 속한 모든 동기화 폴더 데이터가 삭제되는지 확인 |
+| `getVersionString format` | 출력 형식 확인 | `v1.2.3 (456)` 형태의 표준 형식 반환 확인 |
+| `handles SDK versions` | 하위 호환성 확인 | API 27, 28, 33 등 다양한 SDK 환경에서 안정적으로 동작하는지 확인 |
+
+### 3.2 FileUtilsTest & MimeTypeUtilTest
+파일 처리 유틸리티와 확장자 기반 MIME 타입 매핑을 검증합니다.
+
+| 테스트 메서드 | 테스트 목적 | 검증 내용 |
+| :--- | :--- | :--- |
+| `sanitizeFileName` | 파일명 정제 | 특수 문자(`?`, `*`, `:`, `|` 등)를 밑줄(`_`)로 올바르게 치환하는지 확인 |
+| `calculateMd5` | 해시 계산 | 파일의 MD5 해시값을 정확하게 계산하고 예외 상황(파일 없음 등)을 처리하는지 확인 |
+| `getMimeType` | MIME 타입 매핑 | 이미지, 문서, 최신 포맷(Obsidian .canvas 등)에 대해 정확한 MIME 타입을 반환하는지 확인 |
+
+### 3.3 SyncLoggerTest
+로그 기록, 파일 순환(Rotation), 보관 정책을 검증합니다.
+
+| 테스트 메서드 | 테스트 목적 | 검증 내용 |
+| :--- | :--- | :--- |
+| `testLogRotation` | 로그 파일 순환 | 로그 파일 크기가 임계치(10MB)를 넘을 경우 기존 로그를 `.old`로 백업하는지 확인 |
+| `testLogWithAccount` | 계정별 로그 기록 | 로그 메시지에 관련 계정 이메일 정보가 정확히 포함되는지 확인 |
 
 ---
 
-## 4. DriveServiceHelperTest
+## 4. 데이터 계층 테스트 (Room + Mock)
 
-Google Drive API를 통한 파일 다운로드 및 유효성 검사 로직을 검증합니다.
+데이터베이스 접근 객체(DAO)와 데이터 모델의 무결성을 검증합니다.
+
+### 4.1 SyncDaoTest
+Room Database의 쿼리 결과와 데이터 조작 로직을 검증합니다.
 
 | 테스트 메서드 | 테스트 목적 | 검증 내용 |
 | :--- | :--- | :--- |
-| `downloadFile: 0-byte file` | 0바이트 파일 처리 검증 | 파일 크기가 0인 경우 API 호출 없이 로컬에 빈 파일 생성 확인 |
-| `downloadFile: Google Docs` | Google Docs 내보내기 검증 | Google Docs 타입 파일 시 `export` API를 호출하는지 확인 |
-| `downloadFile: Normal file` | 일반 파일 다운로드 검증 | 일반 바이너리 파일 시 표준 다운로드 API를 호출하는지 확인 |
+| `deleteFoldersByAccount` | 연관 데이터 삭제 | 계정 삭제 시 해당 계정에 연결된 모든 동기화 폴더 정보가 함께 제거되는지 확인 |
+
+### 4.2 GoogleAccountTest
+Data Class의 속성과 주요 Enum(`SyncStatus`, `SyncDirection`)의 정의를 검증합니다.
 
 ---
 
 ## 테스트 실행 방법
 
-다음 명령어를 터미널에서 실행하여 위 모든 테스트를 한 번에 검증할 수 있습니다.
+터미널에서 다음 명령어를 실행하여 전체 테스트를 수행할 수 있습니다.
 
 ```bash
 ./gradlew test

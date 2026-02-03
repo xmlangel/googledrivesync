@@ -171,6 +171,105 @@ class SyncManagerTest {
     }
 
     @Test
+    fun `resolveConflict KEEP_BOTH renames local and downloads drive version`() = runBlocking {
+        println("Testing conflict resolution with KEEP_BOTH policy...")
+        val localDir = context.cacheDir
+        val localFile = File(localDir, "conflict.txt")
+        localFile.writeText("local content")
+        
+        val syncItem = SyncItemEntity(
+            id = "test-id",
+            syncFolderId = "folder-id",
+            accountId = "account-id",
+            accountEmail = "test@example.com",
+            localPath = localFile.absolutePath,
+            driveFileId = "drive-id",
+            fileName = "conflict.txt",
+            mimeType = "text/plain",
+            localModifiedAt = 1000L,
+            driveModifiedAt = 1000L,
+            localSize = 13L,
+            driveSize = 13L,
+            status = SyncStatus.CONFLICT
+        )
+        val conflict = SyncConflict(syncItem, "conflict.txt", 1000L, 13L, "conflict.txt", 1000L, 13L)
+        
+        coEvery { mockDriveHelper.downloadFile(any(), any()) } answers {
+            File(it.invocation.args[1] as String).writeText("drive content")
+            true
+        }
+        coEvery { mockSyncItemDao.updateItemStatus(any(), any()) } just Runs
+        
+        val result = syncManager.resolveConflict(conflict, ConflictResolution.KEEP_BOTH)
+        
+        assertTrue(result)
+        
+        val renamedFile = File(localDir, "conflict_local.txt")
+        assertTrue("Local file should have been renamed to _local.txt", renamedFile.exists())
+        assertEquals("Renamed file should have local content", "local content", renamedFile.readText())
+        
+        assertTrue("Original path should now have drive content", localFile.exists())
+        assertEquals("Original path should have downloaded content", "drive content", localFile.readText())
+        
+        coVerify { mockSyncItemDao.updateItemStatus("test-id", SyncStatus.SYNCED) }
+        println("  Verified KEEP_BOTH: local renamed, drive downloaded, DB updated.")
+        
+        // Cleanup
+        localFile.delete()
+        renamedFile.delete()
+        Unit
+    }
+
+    @Test
+    fun `syncFolder adds to conflicts list when no default policy is set`() = runBlocking {
+        println("Testing 'Ask Every Time' behavior (null policy)...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        // Null policy means "Ask Every Time"
+        every { mockSyncPreferences.defaultConflictResolution } returns null
+        
+        // Setup a conflict: Local and Drive both updated since last sync
+        val localFile = File(context.cacheDir, "conflict_ask.txt")
+        localFile.writeText("local change")
+        localFile.setLastModified(5000L)
+        
+        val driveItems = listOf(
+            uk.xmlangel.googledrivesync.data.drive.DriveItem("drive-id-ask", "conflict_ask.txt", "text/plain", 6000L, 100L, "hash", listOf("drive-id"), false)
+        )
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns driveItems
+        
+        val existingItem = SyncItemEntity(
+            id = "item-id", syncFolderId = folderId, accountId = "acc-id", accountEmail = "test@example.com",
+            localPath = localFile.absolutePath, driveFileId = "drive-id-ask", fileName = "conflict_ask.txt",
+            mimeType = "text/plain", localModifiedAt = 1000L, driveModifiedAt = 1000L, // Last sync was at 1000L
+            localSize = 5L, driveSize = 5L, status = SyncStatus.SYNCED
+        )
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Conflict)
+        val syncConflictResult = result as SyncResult.Conflict
+        assertEquals("Should have 1 conflict in the result", 1, syncConflictResult.conflicts.size)
+        assertEquals("Conflict file name should match", "conflict_ask.txt", syncConflictResult.conflicts[0].localFileName)
+        
+        // Verify state flows were updated
+        assertEquals("Pending conflicts list should have 1 item", 1, syncManager.pendingConflicts.value.size)
+        
+        println("  Verified that null policy results in a Conflict result for user interaction.")
+        localFile.delete()
+        Unit
+    }
+
+
+    @Test
     fun `syncFolder updates lastSyncResult on success`() = runBlocking {
         println("Testing syncFolder updates lastSyncResult on success...")
         val folderId = "test-folder-id"

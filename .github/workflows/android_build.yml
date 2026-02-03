@@ -136,7 +136,13 @@ jobs:
         fi
 
     - name: Rename APK
-      run: mv app-debug/app-debug.apk app-debug-${{ github.ref_name }}.apk
+      run: |
+        APK_PATH=$(find . -name "*.apk" -type f | head -n 1)
+        if [ -z "$APK_PATH" ]; then
+          echo "Error: APK file not found"
+          exit 1
+        fi
+        mv "$APK_PATH" app-debug-${{ github.ref_name }}.apk
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2

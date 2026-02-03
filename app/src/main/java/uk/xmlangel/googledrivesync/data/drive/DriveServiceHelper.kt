@@ -98,18 +98,21 @@ class DriveServiceHelper(private val context: Context) {
             nextPageToken = result.nextPageToken
         )
     }
-    
-    /**
-     * List all files in a folder, handling pagination automatically
+        /**
+     * List all files in a folder, handling pagination automatically.
+     * @param onProgress Callback invoked with the current count of retrieved files.
      */
-    suspend fun listAllFiles(folderId: String? = null): List<DriveItem> {
+    suspend fun listAllFiles(
+        folderId: String? = null,
+        onProgress: ((Int) -> Unit)? = null
+    ): List<DriveItem> {
         val allFiles = mutableListOf<DriveItem>()
         var pageToken: String? = null
-        
-        do {
+                do {
             val result = listFiles(folderId, pageSize = 100, pageToken = pageToken)
             allFiles.addAll(result.files)
             pageToken = result.nextPageToken
+            onProgress?.invoke(allFiles.size)
         } while (pageToken != null)
         
         return allFiles

@@ -244,7 +244,13 @@ class SyncManager internal constructor(
             // Phase 3: Targeted Scan or Full Scan
             val dirtyLocalItems = dirtyLocalDao.getDirtyItemsByFolder(folderId)
             val isInitialSync = folder.lastSyncedAt == 0L
-            val isTimeForFullScan = (System.currentTimeMillis() - folder.lastSyncedAt) > 3600000 // 1 hour
+            
+            // Re-evaluating full scan: Only run full scan if:
+            // 1. Initial sync (to populate DB)
+            // 2. We don't have a valid change token
+            // 3. More than 1 hour passed AND the last attempt was successful (to avoid failing loop)
+            val oneHour = 3600000L
+            val isTimeForFullScan = (System.currentTimeMillis() - folder.lastSyncedAt) > oneHour
             
             if (!isInitialSync && !isTimeForFullScan && dirtyLocalItems.isNotEmpty() && folder.lastStartPageToken != null) {
                 logger.log("부분 동기화 모드 (감지된 로컬 변경 건수: ${dirtyLocalItems.size})", folder.accountEmail)
@@ -272,7 +278,17 @@ class SyncManager internal constructor(
                 
                 // Get all drive files using the new pagination helper
                 val driveItems = try {
-                    driveHelper.listAllFiles(folder.driveFolderId)
+                    driveHelper.listAllFiles(folder.driveFolderId) { count ->
+                        _syncProgress.value = SyncProgress(
+                            currentFile = "Google Drive",
+                            currentIndex = 0,
+                            totalFiles = 0,
+                            bytesTransferred = 0,
+                            totalBytes = 0,
+                            isUploading = false,
+                            statusMessage = "드라이브 목록 조회 중 ($count)..."
+                        )
+                    }
                 } catch (e: Exception) {
                     if (isFatalNetworkError(e)) throw e
                     val exceptionMsg = e.message ?: e.javaClass.simpleName
@@ -1350,11 +1366,13 @@ class SyncManager internal constructor(
                 }
                 currentPageToken = result.nextPageToken ?: ""
                 nextStartPageToken = result.newStartPageToken
+                
+                // Save progress after each batch to enable resumption if interrupted
+                val tokenToSave = if (currentPageToken.isNotEmpty()) currentPageToken else nextStartPageToken
+                if (tokenToSave != null) {
+                    syncFolderDao.updatePageToken(folder.id, tokenToSave)
+                }
             } while (currentPageToken.isNotEmpty())
-            
-            if (nextStartPageToken != null) {
-                syncFolderDao.updatePageToken(folder.id, nextStartPageToken)
-            }
             
             return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, pendingUploads)
         } catch (e: CancellationException) {

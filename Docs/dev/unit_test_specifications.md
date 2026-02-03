@@ -113,10 +113,56 @@ Data Class의 속성과 주요 Enum(`SyncStatus`, `SyncDirection`)의 정의를 
 
 ---
 
+## 5. 테스트 결과 상세 속성(Metadata) 작성 가이드
+
+테스트 결과의 가독성을 높이고 CI/CD 연동 시 상세 정보를 제공하기 위해 `@TestMetadata` 어노테이션을 사용합니다. 이 정보는 테스트 실행 후 JUnit XML의 `<properties>` 섹션에 자동으로 기록됩니다.
+
+### 5.1 `@TestMetadata` 사용법
+
+테스트 메서드 상단에 어노테이션을 추가하여 테스트의 의도와 검증 단계를 명시합니다.
+
+```kotlin
+@Test
+@TestMetadata(
+    description = "서비스 초기화 검증",
+    step = "1. DriveServiceHelper 목킹 | 2. initialize() 호출 | 3. 반환값 확인",
+    expected = "DriveServiceHelper가 성공하면 true를 반환한다"
+)
+fun `initialize returns true when drive helper initializes successfully`() {
+    // ... 테스트 코드 ...
+}
+```
+
+### 5.2 속성 매핑 (XML Properties)
+
+테스트가 완료되면 `patchJUnitXml` Gradle 태스크가 실행되어 다음과 같은 형태로 XML을 변환합니다:
+
+| 어노테이션 필드 | XML 속성 명 (lowercase) | 설명 |
+| :--- | :--- | :--- |
+| `description` | `description` | 테스트 항목의 국문/영문 설명 |
+| `step` | `step` | 테스트가 수행되는 단계 (파이프 `|` 구분 권장) |
+| `expected` | `expected_result` | 기댓값에 대한 설명 |
+| (자동 생성) | `actual_result` | 테스트 성공 시 `PASS`, 실패 시 `FAIL: [에러 메시지]` |
+
+### 5.3 설정 방법
+
+새 테스트 클래스에서 이 기능을 활성화하려면 `TestMetadataRule`을 `@Rule`로 추가해야 합니다.
+
+```kotlin
+class NewSyncTest {
+    @get:Rule
+    val metadataRule = TestMetadataRule()
+    
+    // ... 테스트 메서드 ...
+}
+```
+
+---
+
 ## 테스트 실행 방법
 
-터미널에서 다음 명령어를 실행하여 전체 테스트를 수행할 수 있습니다.
+터미널에서 다음 명령어를 실행하여 전체 테스트를 수행할 수 있습니다. `testDebugUnitTest` 태스크 실행 후 `patchJUnitXml`이 자동으로 실행됩니다.
 
 ```bash
-./gradlew test
+./gradlew testDebugUnitTest
 ```

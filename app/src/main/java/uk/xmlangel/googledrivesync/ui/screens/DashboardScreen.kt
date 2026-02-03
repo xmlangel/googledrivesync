@@ -27,6 +27,7 @@ import uk.xmlangel.googledrivesync.sync.SyncConflict
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
 import uk.xmlangel.googledrivesync.sync.SyncManager
 import uk.xmlangel.googledrivesync.sync.SyncResult
+import uk.xmlangel.googledrivesync.sync.SyncWorker
 import uk.xmlangel.googledrivesync.util.AppVersionUtil
 import java.text.SimpleDateFormat
 import java.util.*
@@ -389,6 +390,9 @@ fun DashboardScreen(
                 TextButton(
                     onClick = {
                         val activity = context as? Activity
+                        // Cancel background sync and stop monitoring
+                        SyncWorker.cancel(context)
+                        syncManager.stopMonitoringFolders()
                         activity?.finish()
                     },
                     colors = ButtonDefaults.textButtonColors(

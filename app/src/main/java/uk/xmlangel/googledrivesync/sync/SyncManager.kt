@@ -107,6 +107,21 @@ class SyncManager internal constructor(
         }
     }
 
+    /**
+     * Stop all folder observers
+     */
+    fun stopMonitoringFolders() {
+        synchronized(folderObservers) {
+            folderObservers.values.forEach { it.stopWatching() }
+            folderObservers.clear()
+        }
+        synchronized(debounceJobs) {
+            debounceJobs.values.forEach { it.cancel() }
+            debounceJobs.clear()
+        }
+        logger.log("모든 로컬 실시간 감시 중단")
+    }
+
     private fun handleLocalChangeEvent(folderId: String, event: Int, path: String?) {
         if (path == null) return
         

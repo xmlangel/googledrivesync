@@ -491,12 +491,14 @@ class SyncManager internal constructor(
                 }
             }
         } catch (e: Exception) {
+            if (isFatalNetworkError(e)) throw e
+            val exceptionMsg = e.message ?: e.javaClass.simpleName
             syncItemDao.updateItemError(
                 conflict.syncItem.id,
                 SyncStatus.ERROR,
-                e.message ?: "Unknown error"
+                exceptionMsg
             )
-            logger.log("[ERROR] 충돌 해결 실패: ${conflict.localFileName}", conflict.syncItem.accountEmail)
+            logger.log("[ERROR] 충돌 해결 실패: ${conflict.localFileName} ($exceptionMsg)", conflict.syncItem.accountEmail)
             false
         }
     }
@@ -872,6 +874,8 @@ class SyncManager internal constructor(
                 currentStatusMessage = statusMsg
                 trackSyncItem(folder, localFile, driveFile.id, driveFile.modifiedTime, driveFile.size, SyncStatus.SYNCED, driveFile.md5Checksum)
                 return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+            } else {
+                logger.log("MD5 불일치 또는 확인 불가: ${localFile.name} (Local: $localMd5, Drive: ${driveFile.md5Checksum})", folder.accountEmail)
             }
         }
 
@@ -917,7 +921,7 @@ class SyncManager internal constructor(
                             if (defaultResolution == ConflictResolution.USE_LOCAL) uploaded++ else downloaded++
                         } else {
                             errors++
-                            logger.log("[ERROR] 충돌 해결 실패: ${localFile.name}", folder.accountEmail)
+                            // Detailed error already logged in resolveConflict
                         }
                     } else conflicts.add(conflict)
                 }

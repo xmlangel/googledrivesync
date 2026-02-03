@@ -14,6 +14,7 @@ import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import uk.xmlangel.googledrivesync.data.local.*
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.data.model.SyncStatus
+import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAuthIOException
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
@@ -361,9 +362,10 @@ class SyncManager internal constructor(
         } catch (e: Exception) {
             e.printStackTrace()
             val errorMessage = when (e) {
+                is GoogleAuthIOException -> "Google 계정 인증 오류가 발생했습니다. 다시 로그인해 주세요."
                 is java.net.UnknownHostException -> "네트워크 연결이 없거나 Google 서비스에 접속할 수 없습니다 (DNS 오류)"
                 is java.net.SocketTimeoutException -> "네트워크 응답 시간이 초과되었습니다"
-                is java.io.IOException -> "네트워크 또는 파일 I/O 오류: ${e.message}"
+                is java.io.IOException -> "네트워크 또는 파일 I/O 오류: ${e.message ?: "상세 메시지 없음"}"
                 else -> e.message ?: "알 수 없는 오류"
             }
             val errorResult = SyncResult.Error(errorMessage, e)
@@ -804,7 +806,8 @@ class SyncManager internal constructor(
     }
 
     private fun isFatalNetworkError(e: Exception): Boolean {
-        return e is java.net.UnknownHostException || 
+        return e is GoogleAuthIOException ||
+               e is java.net.UnknownHostException || 
                e is java.net.SocketTimeoutException || 
                e is java.io.InterruptedIOException ||
                (e is java.io.IOException && e.message?.contains("Canceled") == true)

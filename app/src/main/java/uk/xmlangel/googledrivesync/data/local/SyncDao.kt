@@ -119,3 +119,18 @@ interface SyncHistoryDao {
     @Query("DELETE FROM sync_history WHERE accountId = :accountId")
     suspend fun deleteHistoryByAccount(accountId: String)
 }
+
+@Dao
+interface DirtyLocalDao {
+    @Query("SELECT * FROM dirty_local_items WHERE syncFolderId = :folderId")
+    suspend fun getDirtyItemsByFolder(folderId: String): List<DirtyLocalItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDirtyItem(item: DirtyLocalItemEntity)
+
+    @Query("DELETE FROM dirty_local_items WHERE localPath = :localPath")
+    suspend fun deleteDirtyItemByPath(localPath: String)
+
+    @Query("DELETE FROM dirty_local_items WHERE syncFolderId = :folderId")
+    suspend fun deleteDirtyItemsByFolder(folderId: String)
+}

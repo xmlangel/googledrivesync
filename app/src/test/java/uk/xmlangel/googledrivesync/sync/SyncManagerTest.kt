@@ -42,6 +42,9 @@ class SyncManagerTest {
     @MockK
     lateinit var mockDatabase: SyncDatabase
 
+    @MockK
+    lateinit var mockDirtyLocalDao: DirtyLocalDao
+
     private lateinit var mockSyncPreferences: SyncPreferences
     
     private lateinit var mockLogger: SyncLogger
@@ -59,6 +62,8 @@ class SyncManagerTest {
         mockHistoryDao = mockk(relaxed = true)
         mockDriveHelper = mockk(relaxed = true)
         mockDatabase = mockk(relaxed = true)
+        mockDirtyLocalDao = mockk(relaxed = true)
+        every { mockDatabase.dirtyLocalDao() } returns mockDirtyLocalDao
         mockSyncPreferences = mockk(relaxed = true)
         
         // Default behaviors
@@ -78,6 +83,7 @@ class SyncManagerTest {
             historyDao = mockHistoryDao,
             driveHelper = mockDriveHelper,
             database = mockDatabase,
+            dirtyLocalDao = mockDirtyLocalDao,
             syncPreferences = mockSyncPreferences,
             logger = mockLogger
         )

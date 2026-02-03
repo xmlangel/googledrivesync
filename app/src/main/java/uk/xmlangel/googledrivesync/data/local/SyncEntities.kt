@@ -66,3 +66,15 @@ data class SyncHistoryEntity(
     val errors: Int = 0,
     val status: String = "IN_PROGRESS"
 )
+
+/**
+ * Entity for tracking real-time local file changes (Dirty Tracking)
+ */
+@Entity(tableName = "dirty_local_items")
+data class DirtyLocalItemEntity(
+    @PrimaryKey
+    val localPath: String,
+    val syncFolderId: String,
+    val eventType: Int, // From FileObserver events
+    val detectedAt: Long = System.currentTimeMillis()
+)

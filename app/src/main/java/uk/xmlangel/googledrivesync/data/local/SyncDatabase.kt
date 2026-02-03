@@ -13,9 +13,10 @@ import uk.xmlangel.googledrivesync.data.model.SyncStatus
     entities = [
         SyncFolderEntity::class,
         SyncItemEntity::class,
-        SyncHistoryEntity::class
+        SyncHistoryEntity::class,
+        DirtyLocalItemEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -24,6 +25,7 @@ abstract class SyncDatabase : RoomDatabase() {
     abstract fun syncFolderDao(): SyncFolderDao
     abstract fun syncItemDao(): SyncItemDao
     abstract fun syncHistoryDao(): SyncHistoryDao
+    abstract fun dirtyLocalDao(): DirtyLocalDao
     
     companion object {
         @Volatile

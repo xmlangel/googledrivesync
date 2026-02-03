@@ -148,6 +148,36 @@ class DriveServiceHelper(private val context: Context) {
             .execute()
         file.toDriveItem()
     }
+
+    /**
+     * Get a single file by ID
+     */
+    suspend fun getFile(fileId: String): DriveItem? = withContext(Dispatchers.IO) {
+        try {
+            getFileMetadata(fileId)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Find a file by name in a specific parent folder
+     */
+    suspend fun findFile(name: String, parentId: String): DriveItem? = withContext(Dispatchers.IO) {
+        try {
+            val query = "name = '$name' and '$parentId' in parents and trashed = false"
+            val result = getDrive().files().list()
+                .setQ(query)
+                .setSpaces("drive")
+                .setFields("files(id, name, mimeType, modifiedTime, size, parents, md5Checksum)")
+                .setPageSize(1)
+                .execute()
+            
+            result.files?.firstOrNull()?.toDriveItem()
+        } catch (e: Exception) {
+            null
+        }
+    }
     
     /**
      * Download a file

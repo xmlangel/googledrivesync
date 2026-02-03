@@ -46,12 +46,17 @@ class SyncMoveDetectionTest {
     @MockK(relaxUnitFun = true)
     lateinit var mockLogger: SyncLogger
 
+    @MockK
+    lateinit var mockDirtyLocalDao: DirtyLocalDao
+
     private lateinit var syncManager: SyncManager
 
     @Before
     fun setUp() {
         MockKAnnotations.init(this)
         context = ApplicationProvider.getApplicationContext()
+        mockDirtyLocalDao = mockk(relaxed = true)
+        every { mockDatabase.dirtyLocalDao() } returns mockDirtyLocalDao
         
         syncManager = SyncManager(
             context = context,
@@ -60,6 +65,7 @@ class SyncMoveDetectionTest {
             syncFolderDao = mockSyncFolderDao,
             syncItemDao = mockSyncItemDao,
             historyDao = mockHistoryDao,
+            dirtyLocalDao = mockDirtyLocalDao,
             syncPreferences = mockSyncPreferences,
             logger = mockLogger
         )

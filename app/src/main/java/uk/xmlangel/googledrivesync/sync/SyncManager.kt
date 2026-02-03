@@ -275,12 +275,13 @@ class SyncManager internal constructor(
                     driveHelper.listAllFiles(folder.driveFolderId)
                 } catch (e: Exception) {
                     if (isFatalNetworkError(e)) throw e
+                    val exceptionMsg = e.message ?: e.javaClass.simpleName
                     val errorMsg = when (e) {
                         is java.net.UnknownHostException -> "네트워크 연결이 없거나 Google 서비스에 접속할 수 없습니다 (DNS 오류)"
                         is java.net.SocketTimeoutException -> "서버 응답 시간 초과"
-                        else -> e.message ?: "드라이브 목록 획득 실패"
+                        else -> exceptionMsg
                     }
-                    logger.log("[ERROR] $errorMsg", folder.accountEmail)
+                    logger.log("[ERROR] 드라이브 목록 획득 실패: $errorMsg", folder.accountEmail)
                     errors++
                     emptyList()
                 }
@@ -594,6 +595,10 @@ class SyncManager internal constructor(
                 }
             }
 
+            if (localFile != null && localFile.name.contains("_local")) {
+                skipped++; continue
+            }
+            
             if (localFile != null) {
                 handledLocalPaths.add(localFile.absolutePath)
             }
@@ -691,8 +696,10 @@ class SyncManager internal constructor(
         // 2. Process remaining Local items (New Uploads or Deletions)
         for (localFile in localItems) {
             if (handledLocalPaths.contains(localFile.absolutePath)) continue
-            if (!localFile.exists()) continue // Skip if renamed or deleted already
-            
+            if (localFile.name.contains("_local")) {
+                skipped++; continue
+            }
+
             val currentIndex = currentFileIndex.incrementAndGet()
             _syncProgress.value = SyncProgress(
                 currentFile = localFile.name,
@@ -737,7 +744,9 @@ class SyncManager internal constructor(
                     // In the interest of resilience, we log it and continue with next file if possible
                     errors++
                     val errorDetail = if (isFatalNetworkError(e)) "(네트워크 오류)" else ""
-                    logger.log("[ERROR] 드라이브 메타데이터 확인 실패 $errorDetail: ${localFile.name}", folder.accountEmail)
+                    val exceptionMsg = e.message ?: e.javaClass.simpleName
+                    logger.log("[ERROR] 드라이브 메타데이터 확인 실패 $errorDetail: ${localFile.name} ($exceptionMsg)", folder.accountEmail)
+                    if (isFatalNetworkError(e)) throw e
                 }
             } else if (localFile.isDirectory) {
                 // New Local Folder
@@ -762,7 +771,9 @@ class SyncManager internal constructor(
                         }
                     } catch (e: Exception) {
                         if (isFatalNetworkError(e)) throw e
-                        errors++; logger.log("[ERROR] 폴더 업로드 실패: ${localFile.name} (${e.message})", folder.accountEmail)
+                        errors++; 
+                        val exceptionMsg = e.message ?: e.javaClass.simpleName
+                        logger.log("[ERROR] 폴더 업로드 실패: ${localFile.name} ($exceptionMsg)", folder.accountEmail)
                     }
                 } else skipped++
             } else {
@@ -778,11 +789,13 @@ class SyncManager internal constructor(
                                 trackSyncItem(folder, localFile, created.id, created.modifiedTime, created.size, SyncStatus.SYNCED, created.md5Checksum)
                                 uploaded++
                             } else {
-                                errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name}", folder.accountEmail)
+                                errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} (결과가 null입니다)", folder.accountEmail)
                             }
                         } catch (e: Exception) {
                             if (isFatalNetworkError(e)) throw e
-                            errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} (${e.message})", folder.accountEmail)
+                            errors++; 
+                            val exceptionMsg = e.message ?: e.javaClass.simpleName
+                            logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} ($exceptionMsg)", folder.accountEmail)
                         }
                     } else {
                         val statusMsg = "업로드 대기: ${localFile.name}"
@@ -810,6 +823,10 @@ class SyncManager internal constructor(
                e is java.net.UnknownHostException || 
                e is java.net.SocketTimeoutException || 
                e is java.io.InterruptedIOException ||
+               e is java.net.ConnectException ||
+               e is java.net.SocketException ||
+               e is java.net.NoRouteToHostException ||
+               e is javax.net.ssl.SSLHandshakeException ||
                (e is java.io.IOException && e.message?.contains("Canceled") == true)
     }
 
@@ -819,6 +836,10 @@ class SyncManager internal constructor(
         driveFile: uk.xmlangel.googledrivesync.data.drive.DriveItem,
         existingItem: SyncItemEntity?
     ): RecursiveSyncResult {
+        if (localFile.name.contains("_local")) {
+            return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+        }
+        
         var uploaded = 0
         var downloaded = 0
         var skipped = 0
@@ -921,15 +942,18 @@ class SyncManager internal constructor(
                                     )
                                     uploaded++
                                 } else {
-                                    errors++; logger.log("[ERROR] 파일 업데이트 실패: ${localFile.name}", folder.accountEmail)
+                                    errors++; logger.log("[ERROR] 파일 업데이트 실패: ${localFile.name} (결과가 null입니다)", folder.accountEmail)
                                 }
                             } catch (e: Exception) {
                                 if (isFatalNetworkError(e)) {
                                     errors++
-                                    logger.log("[ERROR] 파일 업데이트 치명적 네트워크 오류: ${localFile.name} (${e.message})", folder.accountEmail)
+                                    val exceptionMsg = e.message ?: e.javaClass.simpleName
+                                    logger.log("[ERROR] 파일 업데이트 치명적 네트워크 오류: ${localFile.name} ($exceptionMsg)", folder.accountEmail)
+                                    throw e
                                 } else {
                                     errors++
-                                    logger.log("[ERROR] 파일 업데이트 예외 발생: ${localFile.name} (${e.message})", folder.accountEmail)
+                                    val exceptionMsg = e.message ?: e.javaClass.simpleName
+                                    logger.log("[ERROR] 파일 업데이트 예외 발생: ${localFile.name} ($exceptionMsg)", folder.accountEmail)
                                 }
                             }
                         } else {
@@ -971,8 +995,10 @@ class SyncManager internal constructor(
                                 logger.log("[ERROR] 파일 업데이트(다운로드) 실패: ${localFile.name}", folder.accountEmail)
                             }
                         } catch (e: Exception) {
+                             if (isFatalNetworkError(e)) throw e
                              errors++
-                             logger.log("[ERROR] 파일 다운로드 예외 발생: ${localFile.name} (${e.message})", folder.accountEmail)
+                             val exceptionMsg = e.message ?: e.javaClass.simpleName
+                             logger.log("[ERROR] 파일 다운로드 예외 발생: ${localFile.name} ($exceptionMsg)", folder.accountEmail)
                         }
                     } else skipped++
                 }
@@ -981,8 +1007,10 @@ class SyncManager internal constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (isFatalNetworkError(e)) throw e
             errors++
-            logger.log("[ERROR] 파일 쌍 처리 중 치명적 오류: ${localFile.name} (${e.message})", folder.accountEmail)
+            val exceptionMsg = e.message ?: e.javaClass.simpleName
+            logger.log("[ERROR] 파일 쌍 처리 중 치명적 오류: ${localFile.name} ($exceptionMsg)", folder.accountEmail)
         }
         return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, emptyList())
     }
@@ -1132,6 +1160,9 @@ class SyncManager internal constructor(
             if (processedPaths.contains(path)) continue
             processedPaths.add(path)
             
+            // Skip files containing "_local"
+            if (path.contains("_local")) continue
+            
             try {
                 val localFile = File(path)
                 val existingItem = syncItemDao.getSyncItemByLocalPath(path)
@@ -1164,7 +1195,7 @@ class SyncManager internal constructor(
                             trackSyncItem(folder, localFile, uploadedFile.id, uploadedFile.modifiedTime, uploadedFile.size, SyncStatus.SYNCED, uploadedFile.md5Checksum)
                             uploaded++
                         } else {
-                            errors++
+                            errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} (결과가 null입니다)", folder.accountEmail)
                         }
                     }
                 } else if (existingItem != null) {
@@ -1180,7 +1211,9 @@ class SyncManager internal constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.log("[ERROR] 타겟 항목 처리 예외 (${path}): ${e.message}", folder.accountEmail)
+                if (isFatalNetworkError(e)) throw e
+                val exceptionMsg = e.message ?: e.javaClass.simpleName
+                logger.log("[ERROR] 타겟 항목 처리 예외 (${path}): $exceptionMsg", folder.accountEmail)
                 errors++
             }
         }
@@ -1262,6 +1295,9 @@ class SyncManager internal constructor(
                             val existingItem = syncItemDao.getSyncItemByDriveId(driveFileId)
                             if (existingItem != null) {
                                 val localFile = File(existingItem.localPath)
+                                if (localFile.name.contains("_local")) {
+                                    skipped++; continue
+                                }
                                 val pairResult = processFilePair(folder, localFile, driveFile, existingItem)
                                 uploaded += pairResult.uploaded; downloaded += pairResult.downloaded
                                 skipped += pairResult.skipped; errors += pairResult.errors
@@ -1279,6 +1315,12 @@ class SyncManager internal constructor(
                                 
                                 if (parentPath != null) {
                                     val localFile = File(parentPath, driveFile.name)
+                                    
+                                    // Skip local files containing "_local"
+                                    if (localFile.name.contains("_local")) {
+                                        skipped++; continue
+                                    }
+                                    
                                     val pairResult = if (driveFile.isFolder) {
                                         // It's a new folder, create it
                                         if (!localFile.exists()) localFile.mkdirs()
@@ -1296,8 +1338,10 @@ class SyncManager internal constructor(
                             }
                         }
                     } catch (e: Exception) {
+                        if (isFatalNetworkError(e)) throw e
                         errors++
-                        logger.log("[ERROR] 차분 동기화 개별 항목 처리 실패: ${e.message}", folder.accountEmail)
+                        val exceptionMsg = e.message ?: e.javaClass.simpleName
+                        logger.log("[ERROR] 차분 동기화 개별 항목 처리 실패: $exceptionMsg", folder.accountEmail)
                     }
                 }
                 currentPageToken = result.nextPageToken ?: ""

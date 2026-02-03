@@ -1056,6 +1056,86 @@ class SyncManagerTest {
         }
     }
 
+    @Test
+    fun `syncFolder skips files containing _local`() {
+        runBlocking {
+        println("Testing skipping of files containing _local...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        // Setup preference to auto-upload to ensure it WOULD upload if not for the skip
+        every { mockSyncPreferences.autoUploadEnabled } returns true
+        
+        val localFile = File(context.cacheDir, "test_local.txt")
+        localFile.writeText("should be skipped")
+        
+        coEvery { mockDriveHelper.listAllFiles(any()) } returns emptyList()
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(any()) } returns null
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue(result is SyncResult.Success)
+        val success = result as SyncResult.Success
+        assertEquals("Should have 1 skipped file", 1, success.skipped)
+        assertEquals("Should have 0 uploaded files", 0, success.uploaded)
+        
+        // Verify uploadFile was NEVER called for the _local file
+        coVerify(exactly = 0) { mockDriveHelper.uploadFile(localFile.absolutePath, any(), any()) }
+        
+        println("  Verified that file containing _local was skipped.")
+        localFile.delete()
+        }
+    }
+
+    @Test
+    fun `syncFolder logs exception name when message is null`() {
+        runBlocking {
+        println("Testing logging of exception name when message is null...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        
+        // Force an exception with null message during file listing
+        coEvery { mockDriveHelper.listAllFiles(any()) } throws java.io.IOException(null as String?)
+        
+        syncManager.syncFolder(folderId)
+        
+        // Verify that logger was called with the exception class name "IOException"
+        verify { mockLogger.log(match { it.contains("IOException") }, any()) }
+        println("  Verified exception class name was logged when message was null.")
+        }
+    }
+
+    @Test
+    fun `syncFolder rethrows ConnectException as fatal`() {
+        runBlocking {
+        println("Testing handling of ConnectException as fatal error...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        
+        // Mock a ConnectException
+        coEvery { mockDriveHelper.listAllFiles(any()) } throws java.net.ConnectException("Connection refused")
+        
+        val result = syncManager.syncFolder(folderId)
+        
+        assertTrue("Result should be SyncResult.Error but was $result", result is SyncResult.Error)
+        println("  Verified syncFolder caught ConnectException and returned SyncResult.Error.")
+        }
+    }
+
     @org.junit.After
     fun tearDown() {
         unmockkObject(uk.xmlangel.googledrivesync.util.FileUtils)

@@ -102,6 +102,9 @@ jobs:
         name: app-debug
         path: .
 
+    - name: List Files (Debug)
+      run: ls -R
+
     - name: Combine Release Notes
       run: |
         VERSION="${{ github.ref_name }}"
@@ -133,7 +136,7 @@ jobs:
         fi
 
     - name: Rename APK
-      run: mv app-debug.apk app-debug-${{ github.ref_name }}.apk
+      run: mv app-debug/app-debug.apk app-debug-${{ github.ref_name }}.apk
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2

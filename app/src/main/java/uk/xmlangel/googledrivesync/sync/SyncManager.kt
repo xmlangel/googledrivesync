@@ -74,6 +74,7 @@ class SyncManager internal constructor(
      * Initialize Drive service and start folder monitoring
      */
     fun initialize(): Boolean {
+        logger.log("SyncManager.initialize() 호출됨")
         val result = driveHelper.initializeDriveService()
         if (result) {
             startMonitoringFolders()
@@ -942,6 +943,20 @@ class SyncManager internal constructor(
         try {
             when {
                 isLocalUpdated && isDriveUpdated -> {
+                    if (localFile.isDirectory) {
+                        // Directory "conflict" - just update metadata
+                        val statusMsg = "폴더 메타데이터 업데이트 (교차 수정): ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        updateSyncItem(
+                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                            localFile = localFile,
+                            driveFileId = driveFile.id,
+                            driveModifiedTime = driveFile.modifiedTime,
+                            driveSize = 0L,
+                            status = SyncStatus.SYNCED
+                        )
+                        return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+                    }
                     val conflict = SyncConflict(
                         existingItem ?: createSyncItem(folder, localFile, driveFile.id),
                         localFile.name, localModified, localFile.length(),
@@ -958,6 +973,20 @@ class SyncManager internal constructor(
                     } else conflicts.add(conflict)
                 }
                 isLocalUpdated -> {
+                    if (localFile.isDirectory) {
+                        // Local directory updated (likely timestamp) - just update metadata
+                        val statusMsg = "폴더 메타데이터 업데이트 (로컬): ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        updateSyncItem(
+                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                            localFile = localFile,
+                            driveFileId = driveFile.id,
+                            driveModifiedTime = driveFile.modifiedTime,
+                            driveSize = 0L,
+                            status = SyncStatus.SYNCED
+                        )
+                        return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+                    }
                     if (syncPreferences.defaultSyncDirection != SyncDirection.DOWNLOAD_ONLY) {
                         if (syncPreferences.autoUploadEnabled) {
                             val statusMsg = "파일 업데이트(업로드): ${localFile.name}"
@@ -1010,6 +1039,20 @@ class SyncManager internal constructor(
                     } else skipped++
                 }
                 isDriveUpdated -> {
+                    if (localFile.isDirectory) {
+                        // Drive directory updated - just update metadata
+                        val statusMsg = "폴더 메타데이터 업데이트 (Drive): ${localFile.name}"
+                        logger.log(statusMsg, folder.accountEmail)
+                        updateSyncItem(
+                            existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id),
+                            localFile = localFile,
+                            driveFileId = driveFile.id,
+                            driveModifiedTime = driveFile.modifiedTime,
+                            driveSize = 0L,
+                            status = SyncStatus.SYNCED
+                        )
+                        return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+                    }
                     if (syncPreferences.defaultSyncDirection != SyncDirection.UPLOAD_ONLY) {
                         val statusMsg = "파일 다운로드: ${localFile.name}"
                         logger.log(statusMsg, folder.accountEmail)
@@ -1051,7 +1094,7 @@ class SyncManager internal constructor(
         return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts, emptyList())
     }
 
-    private data class RecursiveSyncResult(
+    internal data class RecursiveSyncResult(
         val uploaded: Int,
         val downloaded: Int,
         val skipped: Int,
@@ -1183,7 +1226,7 @@ class SyncManager internal constructor(
     /**
      * Phase 3: Targeted synchronization of specific dirty local paths
      */
-    private suspend fun syncDirtyItems(folder: SyncFolderEntity, dirtyItems: List<DirtyLocalItemEntity>): RecursiveSyncResult {
+    internal suspend fun syncDirtyItems(folder: SyncFolderEntity, dirtyItems: List<DirtyLocalItemEntity>): RecursiveSyncResult {
         var uploaded = 0; var downloaded = 0; var skipped = 0; var errors = 0
         val conflicts = mutableListOf<SyncConflict>()
         val pendingUploads = mutableListOf<PendingUpload>()

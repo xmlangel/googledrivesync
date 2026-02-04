@@ -29,6 +29,10 @@ class SyncLogger(private val context: Context) {
             FileOutputStream(logFile, true).use { output ->
                 output.write(logEntry.toByteArray())
             }
+            
+            // Emit to SharedFlow for real-time updates
+            _logEvents.tryEmit(logEntry.trim())
+
             // Also output to Logcat for easier debugging
             val fullMessage = accountTag + " " + message
             if (message.startsWith("[ERROR]")) {
@@ -93,5 +97,11 @@ class SyncLogger(private val context: Context) {
         private const val LOG_FILE_NAME = "sync.log"
         private const val MAX_SIZE = 10 * 1024 * 1024 // 10MB
         private const val TAG = "GoogleDriveSync"
+
+        private val _logEvents = kotlinx.coroutines.flow.MutableSharedFlow<String>(
+            extraBufferCapacity = 100,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+        )
+        val logEvents = _logEvents.asSharedFlow()
     }
 }

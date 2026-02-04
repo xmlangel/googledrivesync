@@ -24,6 +24,7 @@ import org.junit.Rule
 import java.io.File
 import java.util.*
 import kotlinx.coroutines.flow.flowOf
+import org.junit.rules.TemporaryFolder
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -57,6 +58,9 @@ class SyncManagerTest {
 
     @get:Rule
     val metadataRule = TestMetadataRule()
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
 
     @Before
     fun setUp() {
@@ -1371,12 +1375,77 @@ class SyncManagerTest {
         
         // Mock a ConnectException
         coEvery { mockDriveHelper.listAllFiles(any(), any()) } throws java.net.ConnectException("Connection refused")
-        
         val result = syncManager.syncFolder(folderId)
         
         assertTrue("Result should be SyncResult.Error but was $result", result is SyncResult.Error)
         println("  Verified syncFolder caught ConnectException and returned SyncResult.Error.")
         }
+    }
+
+    @Test
+    @TestMetadata(
+        description = "기존 폴더 처리 시 EISDIR 오류 방지 검증",
+        step = "1. DB에 있는 폴더 목킹 | 2. 로컬 수정 시간 변경 | 3. processFilePair 호출",
+        expected = "updateFile을 호출하지 않고 DB 메타데이터만 업데이트해야 함"
+    )
+    fun `testProcessFilePairHandlesExistingDirectory prevents EISDIR`() = runBlocking {
+        println("설명: 기존 폴더 처리 시 EISDIR 오류 방지 검증 | 예상결과: SUCCESS | 실제결과: 시작")
+        
+        val folderId = "folder-id"
+        val folder = SyncFolderEntity(folderId, "acc", "email", tempFolder.root.absolutePath, "drive-id", "root")
+        
+        val dirName = "existing-dir"
+        val dirPath = File(tempFolder.root, dirName).apply { mkdir() }.absolutePath
+        val localFile = File(dirPath)
+        
+        val driveFileId = "drive-dir-id"
+        val driveDir = DriveItem(
+            id = driveFileId, 
+            name = dirName, 
+            mimeType = "application/vnd.google-apps.folder", 
+            modifiedTime = System.currentTimeMillis(), 
+            size = 0L,
+            parentIds = emptyList(),
+            isFolder = true
+        )
+        
+        val existingItem = SyncItemEntity(
+            id = "item-id",
+            syncFolderId = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = dirPath,
+            driveFileId = driveFileId,
+            fileName = dirName,
+            mimeType = "application/vnd.google-apps.folder",
+            localModifiedAt = System.currentTimeMillis() - 10000, // 10s difference
+            driveModifiedAt = System.currentTimeMillis() - 10000,
+            localSize = 0,
+            driveSize = 0,
+            status = SyncStatus.SYNCED
+        )
+        
+        // Mocking
+        coEvery { mockSyncItemDao.updateSyncItem(any()) } just Runs
+        
+        // Use reflection to call private processFilePair or test indirectly via syncDirtyItems
+        // Actually, let's test via syncDirtyItems which is easier to trigger
+        val dirtyItems = listOf(DirtyLocalItemEntity(dirPath, folderId, 8)) // 8 = MODIFY
+        coEvery { mockDirtyLocalDao.getDirtyItemsByFolder(folderId) } returns dirtyItems
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(dirPath) } returns existingItem
+        coEvery { mockDriveHelper.getFile(driveFileId) } returns driveDir
+        coEvery { mockSyncItemDao.getSyncItemsByFolder(folderId) } returns flowOf(emptyList())
+        
+        // coEvery { mockDriveHelper.updateFile(any(), any(), any()) } returns null // Should not reach here
+        
+        // Directly call internal syncDirtyItems
+        val result = syncManager.syncDirtyItems(folder, dirtyItems)
+        
+        println("설명: 기존 폴더 처리 시 EISDIR 오류 방지 검증 | 예상결과: SUCCESS | 실제결과: ${result.errors} errors")
+        
+        assertEquals("Errors should be 0", 0, result.errors)
+        coVerify(exactly = 0) { mockDriveHelper.updateFile(any(), any(), any()) }
+        coVerify(exactly = 1) { mockSyncItemDao.updateSyncItem(any()) }
     }
 
     @org.junit.After

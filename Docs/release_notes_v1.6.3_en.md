@@ -13,17 +13,25 @@ Google Drive Sync v1.6.2 has been released.
 
 ### 3. Optimized Google Workspace File Handling
 - Improved handling of non-downloadable files like Google Docs and Sheets by applying dedicated export logic or pre-filtering unsupported types to prevent unnecessary errors.
+# Google Drive Sync v1.6.3 Release Notes
 
-### 4. Differential Sync (Changes API) & Local Optimization
-- **Changes API Integration**: Integrated Google Drive's `Changes API` to efficiently detect server-side changes. Improved the sync engine to reflect renames and moves instantly on local storage without re-downloading files, minimizing bandwidth usage.
-- **Local Rename/Move Optimization**: Added detection for local renames and moves using MD5 matching. These changes are now reflected on the server using metadata updates instead of full re-uploads.
+This version focuses on fixing synchronization errors and improving user convenience.
 
-### 5. Improved Stability on App Exit
-- Enhanced the app to cancel active background sync tasks and properly stop real-time folder monitoring when the user completely exits the app, preventing resource leaks.
+## Key Changes
+
+### 1. Bug Fix: EISDIR Error Resolution
+Continuing from previous improvements, we've completely resolved the `EISDIR (Is a directory)` error that occurred when **existing tracked folders** had their modification times changed. Metadata updates for existing folders are now handled reliably.
+
+### 2. Feature: Real-time Sync Log Updates
+We've improved the logging screen to show updates immediately. You no longer need to exit and re-enter the screen to see the latest logs; you can now **monitor sync progress in real-time**.
+
+---
+
+### Other Improvements
+- Improved testability and readability of the sync engine
+- Enhanced initialization logs in `SyncManager`
+
 ## Bug Fixes
-
-### 1. Fixed EISDIR (Is a directory) Error
-- Resolved an `EISDIR` error that occurred when the sync engine attempted to upload a directory as a file. The engine now correctly identifies and creates new local directories on Google Drive.
 
 ### 6. Enhanced Conflict Resolution & Logging
 - Improved conflict resolution by logging detailed MD5 hash mismatches for easier root cause analysis.

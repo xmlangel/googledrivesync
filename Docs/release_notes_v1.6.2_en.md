@@ -1,6 +1,6 @@
-# Release Notes v1.6.1
+# Release Notes v1.6.2
 
-Google Drive Sync v1.6.1 has been released.
+Google Drive Sync v1.6.2 has been released.
 
 ## Key Improvements
 
@@ -20,6 +20,10 @@ Google Drive Sync v1.6.1 has been released.
 
 ### 5. Improved Stability on App Exit
 - Enhanced the app to cancel active background sync tasks and properly stop real-time folder monitoring when the user completely exits the app, preventing resource leaks.
+## Bug Fixes
+
+### 1. Fixed EISDIR (Is a directory) Error
+- Resolved an `EISDIR` error that occurred when the sync engine attempted to upload a directory as a file. The engine now correctly identifies and creates new local directories on Google Drive.
 
 ### 6. Enhanced Conflict Resolution & Logging
 - Improved conflict resolution by logging detailed MD5 hash mismatches for easier root cause analysis.

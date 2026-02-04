@@ -40,6 +40,10 @@ fun SyncLogScreen(
     
     LaunchedEffect(Unit) {
         logs = logger.readLogs()
+        // Observe real-time logs
+        SyncLogger.logEvents.collect { newLog ->
+            logs = listOf(newLog) + logs
+        }
     }
 
     fun shareLogFile() {

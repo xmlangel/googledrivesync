@@ -8,6 +8,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import com.google.api.services.drive.Drive
+import android.util.Log
 import com.google.api.services.drive.model.File as DriveFile
 import java.io.File
 import java.io.OutputStream
@@ -38,8 +39,14 @@ class DriveServiceHelperTest {
         // We'll need a way to inject the mockDrive. 
         // For now, let's assume we'll add a setter or modify the constructor.
         driveServiceHelper.setDriveServiceForTest(mockDrive)
-        
         every { mockDrive.files() } returns mockFiles
+        
+        mockkStatic(Log::class)
+        every { Log.e(any<String>(), any<String>()) } returns 0
+        every { Log.w(any<String>(), any<String>()) } returns 0
+        every { Log.i(any<String>(), any<String>()) } returns 0
+        every { Log.d(any<String>(), any<String>()) } returns 0
+        every { Log.v(any<String>(), any<String>()) } returns 0
     }
 
     @Test
@@ -137,6 +144,62 @@ class DriveServiceHelperTest {
         verify(exactly = 0) { mockFiles.export(any(), any()) }
         
         File(destPath).delete()
+        }
+    }
+
+    @Test
+    fun `getFile retries on SocketTimeoutException and eventually succeeds`() {
+        runBlocking {
+            val fileId = "retry-id"
+            val mockDriveFile = DriveFile().apply {
+                setId(fileId)
+                setName("test.txt")
+                setMimeType("text/plain")
+            }
+
+            every { mockFiles.get(fileId) } returns mockGet
+            every { mockGet.setFields(any()) } returns mockGet
+            
+            // Fail twice with timeout, succeed on 3rd attempt
+            val iterator = listOf<() -> DriveFile>(
+                { throw java.net.SocketTimeoutException("Timeout 1") },
+                { throw java.net.SocketTimeoutException("Timeout 2") },
+                { mockDriveFile }
+            ).iterator()
+            every { mockGet.execute() } answers { iterator.next().invoke() }
+
+            val result = driveServiceHelper.getFile(fileId)
+
+            assertNotNull(result)
+            assertEquals("test.txt", result?.name)
+            
+            // Should have called execute 3 times
+            verify(exactly = 3) { mockGet.execute() }
+        }
+    }
+
+    @Test
+    fun `getFile fails after max retries`() {
+        runBlocking {
+            val fileId = "fail-id"
+
+            every { mockFiles.get(fileId) } returns mockGet
+            every { mockGet.setFields(any()) } returns mockGet
+            
+            // Fail 5 times with timeout
+            every { mockGet.execute() } throws java.net.SocketTimeoutException("Timeout")
+
+            val result = driveServiceHelper.getFile(fileId)
+
+            // DriveServiceHelper.getFile returns null on Exception (not rethrowing)
+            // Wait, looking at getFile implementation:
+            // catch (e: Exception) { null }
+            // But runWithRetry throws the last exception. 
+            // So getFile will catch that thrown exception and return null.
+            assertNull(result)
+            
+            // Should have called execute 5 times
+            verify(exactly = 5) { mockGet.execute() }
         }
     }
 }

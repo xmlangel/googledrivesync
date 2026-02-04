@@ -1115,6 +1115,49 @@ class SyncManagerTest {
             unmockkObject(uk.xmlangel.googledrivesync.util.FileUtils)
         }
     }
+    @Test
+    fun testSyncDirtyItemsHandlesDirectory() {
+        runBlocking {
+            val folderId = "test-folder-id"
+            val dirName = "Obsidian"
+            val newDir = File(context.cacheDir, dirName)
+            if (!newDir.exists()) newDir.mkdir()
+            
+            val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive", lastSyncedAt = 1000L, lastStartPageToken = "token")
+            coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+            every { mockDriveHelper.initializeDriveService(any()) } returns true
+            coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+            coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+            coEvery { mockDriveHelper.getChanges(any()) } returns DriveChangeResult(emptyList(), null, "token")
+            coEvery { mockDriveHelper.getStartPageToken() } returns "new-token"
+            
+            // Dirty item: new directory
+            val dirtyItems = listOf(DirtyLocalItemEntity(newDir.absolutePath, folderId, 8))
+            coEvery { mockDirtyLocalDao.getDirtyItemsByFolder(folderId) } returns dirtyItems
+            
+            // SyncItemDao mocks
+            coEvery { mockSyncItemDao.getSyncItemByLocalPath(newDir.absolutePath) } returns null
+            coEvery { mockSyncItemDao.getSyncItemsByFolder(folderId) } returns flowOf(emptyList())
+            
+            // DriveHelper mocks - must return null to trigger "New local item" logic
+            coEvery { mockDriveHelper.getFile(any()) } returns null
+            coEvery { mockDriveHelper.findFile(any(), any()) } returns null
+            
+            // DriveHelper mock for createFolder
+            val driveFolder = DriveItem("drive-folder-id", dirName, "application/vnd.google-apps.folder", System.currentTimeMillis(), 0L, null, listOf("drive-id"), true)
+            coEvery { mockDriveHelper.createFolder(dirName, any()) } returns driveFolder
+            coEvery { mockSyncItemDao.insertSyncItem(any()) } just Runs
+            
+            syncManager.syncFolder(folderId)
+            
+            // Verify createFolder was called instead of uploadFile
+            coVerify { mockDriveHelper.createFolder(dirName, any()) }
+            coVerify(exactly = 0) { mockDriveHelper.uploadFile(any(), any(), any(), any()) }
+            
+            newDir.delete()
+        }
+    }
+
 
     @Test
     fun testSyncFolderUsesChangesApi() {

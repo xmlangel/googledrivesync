@@ -1289,14 +1289,25 @@ class SyncManager internal constructor(
                         conflicts.addAll(result.conflicts)
                         pendingUploads.addAll(result.pendingUploads)
                     } else {
-                        // New local file - upload
+                        // New local item - upload file or create folder
                         val parentFolderId = findDriveParentFolder(folder, localFile) ?: folder.driveFolderId
-                        val uploadedFile = driveHelper.uploadFile(localFile.absolutePath, localFile.name, parentFolderId, getMimeType(localFile.name))
-                        if (uploadedFile != null) {
-                            trackSyncItem(folder, localFile, uploadedFile.id, uploadedFile.modifiedTime, uploadedFile.size, SyncStatus.SYNCED, uploadedFile.md5Checksum)
-                            uploaded++
+                        if (localFile.isDirectory) {
+                            val createdFolder = driveHelper.createFolder(localFile.name, parentFolderId)
+                            if (createdFolder != null) {
+                                trackSyncItem(folder, localFile, createdFolder.id, createdFolder.modifiedTime, 0L, SyncStatus.SYNCED)
+                                uploaded++
+                                logger.log("새 폴더 생성 완료: ${localFile.name}", folder.accountEmail)
+                            } else {
+                                errors++; logger.log("[ERROR] 폴더 생성 실패: ${localFile.name}", folder.accountEmail)
+                            }
                         } else {
-                            errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} (결과가 null입니다)", folder.accountEmail)
+                            val uploadedFile = driveHelper.uploadFile(localFile.absolutePath, localFile.name, parentFolderId, getMimeType(localFile.name))
+                            if (uploadedFile != null) {
+                                trackSyncItem(folder, localFile, uploadedFile.id, uploadedFile.modifiedTime, uploadedFile.size, SyncStatus.SYNCED, uploadedFile.md5Checksum)
+                                uploaded++
+                            } else {
+                                errors++; logger.log("[ERROR] 파일 업로드 실패: ${localFile.name} (결과가 null입니다)", folder.accountEmail)
+                            }
                         }
                     }
                 } else if (existingItem != null && !handledMissingIds.contains(existingItem.id)) {

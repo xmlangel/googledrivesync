@@ -1550,6 +1550,49 @@ class SyncManagerTest {
         coVerify(exactly = 0) { mockDriveHelper.uploadFile(any(), any(), any(), any()) }
     }
 
+    @Test
+    fun `testLocalDeletionIsSyncedToServer`() = runBlocking {
+        println("Testing: Local deletion should be synced to Google Drive...")
+        val folderId = "folder-id"
+        val localFile = File(context.cacheDir, "delete_me_soon.txt")
+        // Don't create the file, simulate it was deleted
+        
+        val folder = SyncFolderEntity(folderId, "acc", "email", context.cacheDir.absolutePath, "drive-id", "root", lastSyncedAt = 1000L, lastStartPageToken = "existing-token")
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        
+        val driveFileId = "drive-id-to-del"
+        val existingItem = SyncItemEntity(
+            id = "item-id", syncFolderId = folderId, accountId = "acc", accountEmail = "email",
+            localPath = localFile.absolutePath, driveFileId = driveFileId, fileName = "delete_me_soon.txt",
+            mimeType = "text/plain", localModifiedAt = 1000, driveModifiedAt = 1000, localSize = 12, driveSize = 12, status = SyncStatus.SYNCED
+        )
+        
+        // Mock DB: item exists at this path
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        
+        // Dirty item event: file was modified/deleted (MODIFY event 8 is often used for both in this app's simplified logic or the observer triggers it)
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, 8))
+        coEvery { mockDirtyLocalDao.getDirtyItemsByFolder(folderId) } returns dirtyItems
+        
+        // Drive lookup returns the file (it's still there!)
+        val driveItem = DriveItem(driveFileId, "delete_me_soon.txt", "text/plain", 1000, 12, "md5", listOf("drive-id"), false)
+        coEvery { mockDriveHelper.getFile(driveFileId) } returns driveItem
+        coEvery { mockDriveHelper.delete(driveFileId) } returns true
+        coEvery { mockSyncItemDao.deleteSyncItem(existingItem) } just Runs
+        coEvery { mockSyncItemDao.getSyncItemsByFolder(folderId) } returns flowOf(emptyList())
+        coEvery { mockDriveHelper.getChanges(any()) } returns DriveChangeResult(emptyList(), null, "token")
+        coEvery { mockDriveHelper.getStartPageToken() } returns "new-token"
+        coEvery { mockSyncFolderDao.updatePageToken(folderId, "new-token") } just Runs
+
+        syncManager.syncFolder(folderId)
+        
+        // Verify: driveHelper.delete was called!
+        coVerify { mockDriveHelper.delete(driveFileId) }
+        coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
+        println("  Verified local deletion was synced to server.")
+    }
+
     @org.junit.After
     fun tearDown() {
         unmockkObject(uk.xmlangel.googledrivesync.util.FileUtils)

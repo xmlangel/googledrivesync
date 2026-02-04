@@ -1372,8 +1372,18 @@ class SyncManager internal constructor(
                 } else if (existingItem != null && !handledMissingIds.contains(existingItem.id)) {
                     // File deleted locally - handle deletion
                     if (existingItem.driveFileId != null) {
-                        syncItemDao.deleteSyncItem(existingItem)
-                        logger.log("로컬 삭제 감지됨: ${existingItem.fileName} (DB에서 제거)", folder.accountEmail)
+                        logger.log("로컬 삭제 감지됨: ${existingItem.fileName}. 서버에 반영 중...", folder.accountEmail)
+                        try {
+                            if (driveHelper.delete(existingItem.driveFileId!!)) {
+                                syncItemDao.deleteSyncItem(existingItem)
+                                logger.log("로컬 삭제 서버 반영 완료: ${existingItem.fileName}", folder.accountEmail)
+                            } else {
+                                logger.log("[WARNING] 로컬 삭제 서버 반영 실패: ${existingItem.fileName}", folder.accountEmail)
+                            }
+                        } catch (e: Exception) {
+                            if (isFatalNetworkError(e)) throw e
+                            logger.log("[ERROR] 로컬 삭제 서버 반영 중 예외 발생: ${existingItem.fileName} (${e.message})", folder.accountEmail)
+                        }
                     }
                 }
             } catch (e: CancellationException) {

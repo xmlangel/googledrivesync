@@ -14,11 +14,18 @@ Google Drive Sync v1.6.0 has been released. This version focuses on improving th
 ### 3. Optimized Google Workspace File Handling
 - Improved handling of non-downloadable files like Google Docs and Sheets by applying dedicated export logic or pre-filtering unsupported types to prevent unnecessary errors.
 
-### 4. Enhanced Conflict Resolution & Logging
+### 4. Differential Sync (Changes API) & Local Optimization
+- **Changes API Integration**: Integrated Google Drive's `Changes API` to efficiently detect server-side changes. Improved the sync engine to reflect renames and moves instantly on local storage without re-downloading files, minimizing bandwidth usage.
+- **Local Rename/Move Optimization**: Added detection for local renames and moves using MD5 matching. These changes are now reflected on the server using metadata updates instead of full re-uploads.
+
+### 5. Improved Stability on App Exit
+- Enhanced the app to cancel active background sync tasks and properly stop real-time folder monitoring when the user completely exits the app, preventing resource leaks.
+
+### 6. Enhanced Conflict Resolution & Logging
 - Improved conflict resolution by logging detailed MD5 hash mismatches for easier root cause analysis.
 - Enhanced debugging efficiency by recording detailed error messages and stack traces during synchronization exceptions.
 
-### 5. File Filtering & Type Safety
+### 7. File Filtering & Type Safety
 - Added a feature to exclude local-only files (containing `_local` in the filename) from synchronization.
 - Strengthened type safety checks to prevent incorrect sync attempts involving mismatches between local files and Drive folders.
 

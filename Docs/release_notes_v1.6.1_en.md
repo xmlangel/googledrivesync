@@ -1,6 +1,6 @@
-# Release Notes v1.6.0
+# Release Notes v1.6.1
 
-Google Drive Sync v1.6.0 has been released. This version focuses on improving the usability of the sync engine and strengthening exception handling, with significant improvements in stability during large-scale file listing and response to network instability.
+Google Drive Sync v1.6.1 has been released.
 
 ## Key Improvements
 

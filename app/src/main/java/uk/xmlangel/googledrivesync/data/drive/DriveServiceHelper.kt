@@ -322,6 +322,39 @@ class DriveServiceHelper(private val context: Context) {
     }
     
     /**
+     * Update file metadata (name, parents) without changing content
+     */
+    suspend fun updateMetadata(
+        fileId: String,
+        newName: String? = null,
+        addParents: String? = null,
+        removeParents: String? = null
+    ): Boolean {
+        return try {
+            val fileMetadata = com.google.api.services.drive.model.File()
+            if (newName != null) {
+                fileMetadata.name = newName
+            }
+
+            runWithRetry {
+                val request = getDrive().files().update(fileId, fileMetadata)
+                if (addParents != null) {
+                    request.addParents = addParents
+                }
+                if (removeParents != null) {
+                    request.removeParents = removeParents
+                }
+                
+                request.setFields("id, name, parents").execute()
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("DriveServiceHelper", "Error updating metadata: ${e.message}")
+            false
+        }
+    }
+    
+    /**
      * Create a folder
      */
     suspend fun createFolder(

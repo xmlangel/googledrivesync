@@ -752,12 +752,21 @@ class SyncManager internal constructor(
                 // Item exists in DB but not on Drive in THIS folder.
                 // It might have been moved or deleted.
                 try {
-                    val driveFileMeta = driveHelper.getFileMetadata(existingItem.driveFileId!!)
-                    if (driveFileMeta.parentIds.contains(driveFolderId)) {
-                        // Still in this folder but trashed? Or just missing from list?
-                        logger.log("드라이브에서 삭제됨 감지: ${localFile.name}", folder.accountEmail)
-                        if (localFile.delete()) {
+                    val driveFileMeta = driveHelper.getFile(existingItem.driveFileId!!)
+                    if (driveFileMeta == null || driveFileMeta.parentIds.contains(driveFolderId)) {
+                        // Gone from drive or still in this folder but trashed?
+                        val reason = if (driveFileMeta == null) "서버에서 완전히 삭제됨" else "드라이브에서 삭제됨(휴지통)"
+                        logger.log("$reason 감지: ${localFile.name}", folder.accountEmail)
+                        
+                        // Robust deletion: ensure DB is cleaned up even if file delete fails
+                        val deleteResult = if (localFile.isDirectory) localFile.deleteRecursively() else localFile.delete()
+                        if (deleteResult) {
                             syncItemDao.deleteSyncItem(existingItem)
+                        } else if (!localFile.exists()) {
+                            // File already gone, just clean up DB
+                            syncItemDao.deleteSyncItem(existingItem)
+                        } else {
+                            logger.log("[WARNING] 로컬 파일 삭제 실패: ${localFile.name}", folder.accountEmail)
                         }
                     } else {
                         // Moved to another folder!
@@ -1331,6 +1340,13 @@ class SyncManager internal constructor(
                         errors += result.errors
                         conflicts.addAll(result.conflicts)
                         pendingUploads.addAll(result.pendingUploads)
+                    } else if (existingItem != null && existingItem.driveFileId != null) {
+                        // Was synced before, but now gone from Drive. Treat as server-side deletion.
+                        logger.log("서버 삭제 감지(부분 동기화): ${localFile.name}", folder.accountEmail)
+                        val deleteResult = if (localFile.isDirectory) localFile.deleteRecursively() else localFile.delete()
+                        if (deleteResult || !localFile.exists()) {
+                            syncItemDao.deleteSyncItem(existingItem)
+                        }
                     } else {
                         // New local item - upload file or create folder
                         val parentFolderId = findDriveParentFolder(folder, localFile) ?: folder.driveFolderId
@@ -1426,14 +1442,16 @@ class SyncManager internal constructor(
                             if (existingItem != null) {
                                 val localFile = File(existingItem.localPath)
                                 logger.log("서버 삭제 감지 (API): ${existingItem.fileName}", folder.accountEmail)
-                                if (localFile.exists() ) {
-                                    if (localFile.isDirectory) {
-                                        localFile.deleteRecursively()
-                                    } else {
-                                        localFile.delete()
-                                    }
+                                
+                                val deleteResult = if (localFile.exists()) {
+                                    if (localFile.isDirectory) localFile.deleteRecursively() else localFile.delete()
+                                } else true 
+
+                                if (deleteResult || !localFile.exists()) {
                                     syncItemDao.deleteSyncItem(existingItem)
                                     skipped++
+                                } else {
+                                    logger.log("[WARNING] 로컬 파일 삭제 실패 (API): ${existingItem.fileName}", folder.accountEmail)
                                 }
                             }
                         } else if (driveFile != null) {

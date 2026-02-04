@@ -840,18 +840,55 @@ class SyncManagerTest {
         coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
         
         // Mock Drive metadata call to confirm it's actually trashed or gone
-        val mockDriveItem = uk.xmlangel.googledrivesync.data.drive.DriveItem(
-            id = "drive-id-del", name = "delete_me.txt", mimeType = "text/plain",
-            modifiedTime = 1000L, size = 100L, md5Checksum = "md5",
-            parentIds = listOf("some-other-id"), isFolder = false
-        )
-        coEvery { mockDriveHelper.getFileMetadata("drive-id-del") } returns mockDriveItem
+        // Using getFile (returns null if 404) as used in new Phase 4 implementation
+        coEvery { mockDriveHelper.getFile("drive-id-del") } returns null
         
         syncManager.syncFolder(folderId)
         
-        assertFalse("Local file should have been deleted", localFile.exists())
+        assertFalse("Local file should have been deleted because it is gone from Drive", localFile.exists())
         coVerify { mockSyncItemDao.deleteSyncItem(any()) }
-        println("  Verified server-side deletion was handled correctly.")
+        println("  Verified server-side deletion was handled correctly during full scan.")
+        }
+    }
+
+    @Test
+    fun testSyncFolderHandlesServerTrashDuringFullScan() {
+        runBlocking {
+        println("Testing handling of server-side trash (remains in folder but trashed)...")
+        val folderId = "test-folder-id"
+        val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+        
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        
+        val localFile = File(context.cacheDir, "trash_me.txt")
+        localFile.writeText("content")
+        
+        coEvery { mockDriveHelper.listAllFiles(any(), any()) } returns emptyList()
+        val existingItem = SyncItemEntity(
+            id = "item-id", syncFolderId = folderId, accountId = "acc-id", accountEmail = "test@example.com",
+            localPath = localFile.absolutePath, driveFileId = "drive-id-trash", fileName = "trash_me.txt",
+            mimeType = "text/plain", localModifiedAt = 1000L, driveModifiedAt = 1000L,
+            localSize = localFile.length(), driveSize = localFile.length(), status = SyncStatus.SYNCED
+        )
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        
+        // Mock Drive item still exists but parent matches (missing from list means trashed or moved, 
+        // listAllFiles query is '... and trashed = false')
+        val mockDriveItem = uk.xmlangel.googledrivesync.data.drive.DriveItem(
+            id = "drive-id-trash", name = "trash_me.txt", mimeType = "text/plain",
+            modifiedTime = 1000L, size = 100L, md5Checksum = "md5",
+            parentIds = listOf("drive-id"), isFolder = false // Still reports same parent!
+        )
+        coEvery { mockDriveHelper.getFile("drive-id-trash") } returns mockDriveItem
+        
+        syncManager.syncFolder(folderId)
+        
+        assertFalse("Local file should have been deleted (server trash detection)", localFile.exists())
+        coVerify { mockSyncItemDao.deleteSyncItem(any()) }
         }
     }
 
@@ -1446,6 +1483,71 @@ class SyncManagerTest {
         assertEquals("Errors should be 0", 0, result.errors)
         coVerify(exactly = 0) { mockDriveHelper.updateFile(any(), any(), any()) }
         coVerify(exactly = 1) { mockSyncItemDao.updateSyncItem(any()) }
+    }
+
+    @Test
+    fun `testSyncChangesHandlesRemovalEvenIfLocalFileMissing`() = runBlocking {
+        println("Testing Phase 2: DB cleanup even if local file is already missing...")
+        val folderId = "folder-id"
+        val folder = SyncFolderEntity(folderId, "acc", "email", "/tmp", "drive-id", "root", lastStartPageToken = "token")
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        
+        val driveFileId = "drive-del-id"
+        val existingItem = SyncItemEntity(
+            id = "item-id", syncFolderId = folderId, accountId = "acc", accountEmail = "email",
+            localPath = "/non/existent/path.txt", driveFileId = driveFileId, fileName = "path.txt",
+            mimeType = "text/plain", localModifiedAt = 1000, driveModifiedAt = 1000, localSize = 10, driveSize = 10, status = SyncStatus.SYNCED
+        )
+        coEvery { mockSyncItemDao.getSyncItemByDriveId(driveFileId) } returns existingItem
+        
+        // Result with one 'removed' change
+        val changes = listOf(DriveChange(driveFileId, removed = true, file = null))
+        coEvery { mockDriveHelper.getChanges("token") } returns DriveChangeResult(changes, null, "new-token")
+        
+        // SyncManager uses getSyncItemsByFolder in syncChangesInternal for folder list, mock it
+        coEvery { mockSyncItemDao.getSyncItemsByFolder(folderId) } returns flowOf(emptyList())
+
+        syncManager.syncFolder(folderId)
+        
+        // Verify DB deletion happened despite file missing
+        coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
+    }
+
+    @Test
+    fun `testSyncDirtyItemsHandlesServerDeletionInsteadOfReupload`() = runBlocking {
+        println("Testing Phase 3: Targeted sync deletes local file if Drive counterpart is gone...")
+        val folderId = "folder-id"
+        val localFile = File(context.cacheDir, "resurrect_me.txt")
+        localFile.writeText("some content")
+        
+        val folder = SyncFolderEntity(folderId, "acc", "email", context.cacheDir.absolutePath, "drive-id", "root", lastSyncedAt = 1000L)
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        
+        val driveFileId = "drive-id"
+        val existingItem = SyncItemEntity(
+            id = "item-id", syncFolderId = folderId, accountId = "acc", accountEmail = "email",
+            localPath = localFile.absolutePath, driveFileId = driveFileId, fileName = "resurrect_me.txt",
+            mimeType = "text/plain", localModifiedAt = 1000, driveModifiedAt = 1000, localSize = 12, driveSize = 12, status = SyncStatus.SYNCED
+        )
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        
+        // Dirty item event
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, 8))
+        coEvery { mockDirtyLocalDao.getDirtyItemsByFolder(folderId) } returns dirtyItems
+        
+        // Drive lookup returns null (404)
+        coEvery { mockDriveHelper.getFile(driveFileId) } returns null
+        coEvery { mockSyncItemDao.getSyncItemsByFolder(folderId) } returns flowOf(emptyList())
+        coEvery { mockDriveHelper.getChanges(any()) } returns DriveChangeResult(emptyList(), null, "token")
+        
+        syncManager.syncFolder(folderId)
+        
+        // Verify: local file deleted, DB item deleted, NO upload
+        assertFalse("Local file should have been deleted because it's gone from Drive", localFile.exists())
+        coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
+        coVerify(exactly = 0) { mockDriveHelper.uploadFile(any(), any(), any(), any()) }
     }
 
     @org.junit.After

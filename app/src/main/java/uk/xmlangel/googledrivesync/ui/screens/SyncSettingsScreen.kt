@@ -209,8 +209,8 @@ fun SyncSettingsScreen(
                     icon = Icons.Default.SyncAlt,
                     title = "기본 동기화 모드",
                     subtitle = when (defaultSyncDirection) {
-                        SyncDirection.BIDIRECTIONAL -> "양방향 (권장)"
-                        SyncDirection.DOWNLOAD_ONLY -> "다운로드 전용 (Drive → 로컬)"
+                        SyncDirection.BIDIRECTIONAL -> "양방향"
+                        SyncDirection.DOWNLOAD_ONLY -> "다운로드 전용 (Drive → 로컬, 권장)"
                         SyncDirection.UPLOAD_ONLY -> "업로드 전용 (로컬 → Drive)"
                     },
                     onClick = { showSyncDirectionDialog = true }
@@ -345,8 +345,8 @@ fun SyncSettingsScreen(
             text = {
                 Column {
                     val options = listOf(
-                        SyncDirection.BIDIRECTIONAL to "양방향 (권장)",
-                        SyncDirection.DOWNLOAD_ONLY to "다운로드 전용 (Drive → 로컬)",
+                        SyncDirection.BIDIRECTIONAL to "양방향",
+                        SyncDirection.DOWNLOAD_ONLY to "다운로드 전용 (Drive → 로컬, 권장)",
                         SyncDirection.UPLOAD_ONLY to "업로드 전용 (로컬 → Drive)"
                     )
                     

@@ -89,11 +89,11 @@ class SyncPreferences(context: Context) {
      */
     var defaultSyncDirection: SyncDirection
         get() {
-            val name = prefs.getString(KEY_DEFAULT_SYNC_DIRECTION, SyncDirection.BIDIRECTIONAL.name)
+            val name = prefs.getString(KEY_DEFAULT_SYNC_DIRECTION, SyncDirection.DOWNLOAD_ONLY.name)
             return try {
-                SyncDirection.valueOf(name ?: SyncDirection.BIDIRECTIONAL.name)
+                SyncDirection.valueOf(name ?: SyncDirection.DOWNLOAD_ONLY.name)
             } catch (e: Exception) {
-                SyncDirection.BIDIRECTIONAL
+                SyncDirection.DOWNLOAD_ONLY
             }
         }
         set(value) = prefs.edit { putString(KEY_DEFAULT_SYNC_DIRECTION, value.name) }

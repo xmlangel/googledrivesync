@@ -17,7 +17,7 @@ data class SyncFolderEntity(
     val localPath: String,
     val driveFolderId: String,
     val driveFolderName: String,
-    val syncDirection: SyncDirection = SyncDirection.BIDIRECTIONAL,
+    val syncDirection: SyncDirection = SyncDirection.DOWNLOAD_ONLY,
     val isEnabled: Boolean = true,
     val lastSyncedAt: Long = 0,
     val lastStartPageToken: String? = null,

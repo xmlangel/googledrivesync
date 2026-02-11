@@ -2,6 +2,8 @@ package uk.xmlangel.googledrivesync.sync
 
 import android.content.Context
 import android.os.FileObserver
+import android.app.ActivityManager
+import android.os.PowerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -334,6 +336,12 @@ class SyncManager internal constructor(
             debounceJobs[folderId]?.cancel()
             debounceJobs[folderId] = managerScope.launch {
                 kotlinx.coroutines.delay(5000)
+                if (shouldDeferRealtimeSync()) {
+                    logger.log(
+                        "화면 꺼짐/백그라운드 상태로 실시간 즉시 동기화 보류 (dirty queue 유지, WorkManager에서 처리): $folderId"
+                    )
+                    return@launch
+                }
                 val remainingCooldownMs = getNetworkCooldownRemainingMs(folderId)
                 if (remainingCooldownMs > 0) {
                     logger.log("네트워크 오류 쿨다운으로 자동 동기화 건너뜀: ${remainingCooldownMs / 1000}초 후 재시도 ($folderId)")
@@ -343,6 +351,25 @@ class SyncManager internal constructor(
                 syncFolder(folderId)
             }
         }
+    }
+
+    private fun shouldDeferRealtimeSync(): Boolean {
+        return !isDeviceInteractive() || !isAppInForeground()
+    }
+
+    private fun isDeviceInteractive(): Boolean {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+        return pm.isInteractive
+    }
+
+    private fun isAppInForeground(): Boolean {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return true
+        val packageName = context.packageName
+        val processInfo = am.runningAppProcesses
+            ?.firstOrNull { it.processName == packageName }
+            ?: return true
+        return processInfo.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND ||
+            processInfo.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
     }
     
     /**

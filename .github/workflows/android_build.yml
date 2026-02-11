@@ -25,7 +25,7 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run Tests
-      run: ./gradlew test
+      run: ./gradlew testDebugUnitTest
 
     - name: Upload JUnit Results
       if: always()
@@ -121,7 +121,7 @@ jobs:
         else
           echo "WARNING: Korean release notes not found at $KR_NOTES"
           echo "## [Korean]" >> combined_notes.md
-          echo "Korean release notes not found in this tag. You can find them here: [Korean Release Notes]($REPO_URL/blob/main/$KR_NOTES)" >> combined_notes.md
+          echo "Korean release notes not found in this tag. You can find them here: [Korean Release Notes]($REPO_URL/blob/$VERSION/$KR_NOTES)" >> combined_notes.md
         fi
         
         echo -e "\n\n" >> combined_notes.md
@@ -132,14 +132,14 @@ jobs:
         else
           echo "WARNING: English release notes not found at $EN_NOTES"
           echo "## [English]" >> combined_notes.md
-          echo "English release notes not found in this tag. You can find them here: [English Release Notes]($REPO_URL/blob/main/$EN_NOTES)" >> combined_notes.md
+          echo "English release notes not found in this tag. You can find them here: [English Release Notes]($REPO_URL/blob/$VERSION/$EN_NOTES)" >> combined_notes.md
         fi
 
     - name: Rename APK
       run: |
-        APK_PATH=$(find . -name "*.apk" -type f | head -n 1)
+        APK_PATH=$(find . -name "app-debug.apk" -type f | head -n 1)
         if [ -z "$APK_PATH" ]; then
-          echo "Error: APK file not found"
+          echo "Error: app-debug.apk file not found"
           exit 1
         fi
         mv "$APK_PATH" app-debug-${{ github.ref_name }}.apk
@@ -151,4 +151,3 @@ jobs:
         files: app-debug-${{ github.ref_name }}.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import uk.xmlangel.googledrivesync.data.local.SyncPreferences
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
+import uk.xmlangel.googledrivesync.sync.SyncExclusions
 import uk.xmlangel.googledrivesync.util.AppVersionUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -23,6 +24,7 @@ import uk.xmlangel.googledrivesync.util.AppVersionUtil
 fun SyncSettingsScreen(
     syncPreferences: SyncPreferences,
     onNavigateBack: () -> Unit,
+    onNavigateToExclusions: () -> Unit,
     onScheduleSync: () -> Unit
 ) {
     val context = LocalContext.current
@@ -30,6 +32,7 @@ fun SyncSettingsScreen(
     var wifiOnly by remember { mutableStateOf(syncPreferences.syncWifiOnly) }
     var whileCharging by remember { mutableStateOf(syncPreferences.syncWhileCharging) }
     var autoSync by remember { mutableStateOf(syncPreferences.autoSyncEnabled) }
+    var realtimeSync by remember { mutableStateOf(syncPreferences.realtimeSyncEnabled) }
     var notifications by remember { mutableStateOf(syncPreferences.notificationsEnabled) }
     var defaultConflictResolution by remember { mutableStateOf(syncPreferences.defaultConflictResolution) }
     var defaultSyncDirection by remember { mutableStateOf(syncPreferences.defaultSyncDirection) }
@@ -75,6 +78,18 @@ fun SyncSettingsScreen(
                 )
                 
                 if (autoSync) {
+                    SettingsSwitchItem(
+                        icon = Icons.Default.SyncAlt,
+                        title = "실시간 로컬 변경 감지",
+                        subtitle = "로컬 파일 변경 시 5초 후 자동 동기화",
+                        checked = realtimeSync,
+                        onCheckedChange = {
+                            realtimeSync = it
+                            syncPreferences.realtimeSyncEnabled = it
+                            onScheduleSync()
+                        }
+                    )
+
                     SettingsClickItem(
                         icon = Icons.Default.Schedule,
                         title = "동기화 주기",
@@ -82,6 +97,12 @@ fun SyncSettingsScreen(
                         onClick = { showIntervalDialog = true }
                     )
                     
+                    Text(
+                        text = "* 동기화 주기는 WorkManager 백그라운드 동기화 주기입니다. 실시간 감지가 켜져 있으면 주기와 별도로 즉시 동기화가 수행됩니다.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
                     Text(
                         text = "* Android 시스템 제한으로 인해 백그라운드 동기화는 최소 15분 주기로 동작하며, 시스템 상황에 따라 지연될 수 있습니다.",
                         style = MaterialTheme.typography.labelSmall,
@@ -216,6 +237,15 @@ fun SyncSettingsScreen(
             
             // App Info Section
             val versionInfo = remember { AppVersionUtil.getVersionString(context) }
+
+            SettingsSection(title = "동기화 제외 목록") {
+                SettingsClickItem(
+                    icon = Icons.Default.Block,
+                    title = "제외 파일 목록 보기",
+                    subtitle = "기본 ${SyncExclusions.defaults().size}개 + 사용자 ${syncPreferences.userExcludedPaths.size}개",
+                    onClick = onNavigateToExclusions
+                )
+            }
             
             SettingsSection(title = "앱 정보") {
                 SettingsInfoItem(

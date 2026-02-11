@@ -107,8 +107,9 @@ class SyncWorker(
         if (downloaded > 0) content.append("다운로드: ${downloaded}개 ")
         if (conflicts > 0) content.append("충돌: ${conflicts}개 ")
         if (hasErrors) content.append("\n일부 작업 중 오류가 발생했습니다.")
-        
-        if (content.isEmpty() && !hasErrors) return // Nothing to notify
+        if (content.isEmpty()) {
+            content.append("변경된 파일이 없습니다.")
+        }
 
         val icon = when {
             hasErrors -> android.R.drawable.stat_notify_error

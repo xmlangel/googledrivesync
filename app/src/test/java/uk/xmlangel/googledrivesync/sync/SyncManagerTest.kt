@@ -1,6 +1,7 @@
 package uk.xmlangel.googledrivesync.sync
 
 import android.content.Context
+import android.os.FileObserver
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.*
 import io.mockk.impl.annotations.MockK
@@ -109,6 +110,14 @@ class SyncManagerTest {
         step = "1. DriveServiceHelper 목킹 | 2. initialize() 호출 | 3. 반환값 확인",
         expected = "DriveServiceHelper가 성공하면 true를 반환한다"
     )
+    // Given: Preconditions for "initialize returns true when drive helper initializes successfully" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "initialize returns true when drive helper initializes successfully" is verified.
+    // 주어진 것: "initialize returns true when drive helper initializes successfully" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "initialize returns true when drive helper initializes successfully"의 기대 동작이 검증됨.
     fun `initialize returns true when drive helper initializes successfully`() {
         println("설명: 서비스 초기화 검증 | 예상결과: true | 실제결과: 준비 중...")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
@@ -123,6 +132,14 @@ class SyncManagerTest {
         step = "1. 충돌 항목 생성 | 2. resolveConflict(USE_LOCAL) 호출 | 3. 드라이브 업데이트 및 DB 상태 확인",
         expected = "드라이브 파일이 업데이트되고 DB 상태가 SYNCED로 변경되어야 함"
     )
+    // Given: Preconditions for "resolveConflict USE_LOCAL updates status and calls driveHelper" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "resolveConflict USE_LOCAL updates status and calls driveHelper" is verified.
+    // 주어진 것: "resolveConflict USE_LOCAL updates status and calls driveHelper" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "resolveConflict USE_LOCAL updates status and calls driveHelper"의 기대 동작이 검증됨.
     fun `resolveConflict USE_LOCAL updates status and calls driveHelper`() = runBlocking {
         println("설명: 로컬 우선 해결 정책 검증 | 예상결과: true | 실제결과: 시작")
         val syncItem = SyncItemEntity(
@@ -155,6 +172,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "resolveConflict USE_DRIVE updates status and calls driveHelper" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "resolveConflict USE_DRIVE updates status and calls driveHelper" is verified.
+    // 주어진 것: "resolveConflict USE_DRIVE updates status and calls driveHelper" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "resolveConflict USE_DRIVE updates status and calls driveHelper"의 기대 동작이 검증됨.
     fun `resolveConflict USE_DRIVE updates status and calls driveHelper`() = runBlocking {
         println("Testing conflict resolution with USE_DRIVE policy...")
         val syncItem = SyncItemEntity(
@@ -189,6 +214,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "resolveConflict KEEP_BOTH renames local and downloads drive version" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "resolveConflict KEEP_BOTH renames local and downloads drive version" is verified.
+    // 주어진 것: "resolveConflict KEEP_BOTH renames local and downloads drive version" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "resolveConflict KEEP_BOTH renames local and downloads drive version"의 기대 동작이 검증됨.
     fun `resolveConflict KEEP_BOTH renames local and downloads drive version`() = runBlocking {
         println("Testing conflict resolution with KEEP_BOTH policy...")
         val localDir = context.cacheDir
@@ -239,6 +272,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder adds to conflicts list when no default policy is set" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder adds to conflicts list when no default policy is set" is verified.
+    // 주어진 것: "syncFolder adds to conflicts list when no default policy is set" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder adds to conflicts list when no default policy is set"의 기대 동작이 검증됨.
     fun `syncFolder adds to conflicts list when no default policy is set`() = runBlocking {
         println("Testing 'Ask Every Time' behavior (null policy)...")
         val folderId = "test-folder-id"
@@ -290,6 +331,14 @@ class SyncManagerTest {
 
 
     @Test
+    // Given: Preconditions for "syncFolder updates lastSyncResult on success" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder updates lastSyncResult on success" is verified.
+    // 주어진 것: "syncFolder updates lastSyncResult on success" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder updates lastSyncResult on success"의 기대 동작이 검증됨.
     fun `syncFolder updates lastSyncResult on success`() = runBlocking {
         println("Testing syncFolder updates lastSyncResult on success...")
         val folderId = "test-folder-id"
@@ -322,6 +371,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "dismissLastResult clears lastSyncResult" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "dismissLastResult clears lastSyncResult" is verified.
+    // 주어진 것: "dismissLastResult clears lastSyncResult" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "dismissLastResult clears lastSyncResult"의 기대 동작이 검증됨.
     fun `dismissLastResult clears lastSyncResult`() = runBlocking {
         println("Testing dismissLastResult clears the state...")
         // Set an initial result (we need access to internal state or trigger a sync)
@@ -337,6 +394,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder logs with ERROR prefix on failure" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder logs with ERROR prefix on failure" is verified.
+    // 주어진 것: "syncFolder logs with ERROR prefix on failure" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder logs with ERROR prefix on failure"의 기대 동작이 검증됨.
     fun `syncFolder logs with ERROR prefix on failure`() = runBlocking {
         println("Testing error logging with [ERROR] prefix in syncFolder...")
         val folderId = "test-folder-id"
@@ -364,6 +429,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder updates syncProgress with correct currentIndex and totalFiles" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder updates syncProgress with correct currentIndex and totalFiles" is verified.
+    // 주어진 것: "syncFolder updates syncProgress with correct currentIndex and totalFiles" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder updates syncProgress with correct currentIndex and totalFiles"의 기대 동작이 검증됨.
     fun `syncFolder updates syncProgress with correct currentIndex and totalFiles`() = runBlocking {
         println("Testing syncFolder updates syncProgress correctly...")
         val folderId = "test-folder-id"
@@ -410,6 +483,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder skips when no changes" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder skips when no changes" is verified.
+    // 주어진 것: "syncFolder skips when no changes" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder skips when no changes"의 기대 동작이 검증됨.
     fun `syncFolder skips when no changes`() = runBlocking {
         println("Testing syncFolder skips unchanged files...")
         val folderId = "test-folder-id"
@@ -467,6 +548,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder links existing files without sync" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder links existing files without sync" is verified.
+    // 주어진 것: "syncFolder links existing files without sync" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder links existing files without sync"의 기대 동작이 검증됨.
     fun `syncFolder links existing files without sync`() = runBlocking {
         println("Testing syncFolder linking identical existing files (v1.0.8 logic)...")
         val folderId = "test-folder-id"
@@ -513,6 +602,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder links by size even if timestamps differ greatly" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder links by size even if timestamps differ greatly" is verified.
+    // 주어진 것: "syncFolder links by size even if timestamps differ greatly" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder links by size even if timestamps differ greatly"의 기대 동작이 검증됨.
     fun `syncFolder links by size even if timestamps differ greatly`() = runBlocking {
         println("Testing v1.0.9 size-based linking for new items...")
         val folderId = "test-folder-id"
@@ -550,6 +647,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder swallows metadata update if sizes match" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder swallows metadata update if sizes match" is verified.
+    // 주어진 것: "syncFolder swallows metadata update if sizes match" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder swallows metadata update if sizes match"의 기대 동작이 검증됨.
     fun `syncFolder swallows metadata update if sizes match`() = runBlocking {
         println("Testing v1.0.9 metadata swallowing for existing items...")
         val folderId = "test-folder-id"
@@ -605,6 +710,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder handles renames on Drive by renaming local file" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder handles renames on Drive by renaming local file" is verified.
+    // 주어진 것: "syncFolder handles renames on Drive by renaming local file" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder handles renames on Drive by renaming local file"의 기대 동작이 검증됨.
     fun `syncFolder handles renames on Drive by renaming local file`() = runBlocking {
         println("Testing rename detection on Drive...")
         val folderId = "test-folder-id"
@@ -671,6 +784,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder logs with ERROR prefix when folder not found" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder logs with ERROR prefix when folder not found" is verified.
+    // 주어진 것: "syncFolder logs with ERROR prefix when folder not found" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder logs with ERROR prefix when folder not found"의 기대 동작이 검증됨.
     fun `syncFolder logs with ERROR prefix when folder not found`() {
         runBlocking {
             println("Testing error logging when folder is not found...")
@@ -1330,10 +1451,74 @@ class SyncManagerTest {
         
         syncManager.syncFolder(folderId)
         
-        assertFalse("Local file should have been deleted", localFile.exists())
+        assertFalse("Local file should have been moved out from sync root", localFile.exists())
+        val deferredRoot = File(File(context.cacheDir, "conflicts_backup"), "deferred_delete")
+        val archivedCopyExists = deferredRoot.exists() &&
+            deferredRoot.walkTopDown().any { it.isFile && it.name == "delete_me.txt" }
+        assertTrue("Deleted file should be archived in conflicts_backup/deferred_delete", archivedCopyExists)
         coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
         println("  Verified server deletion was reflected locally via Changes API.")
         }
+    }
+
+    @Test
+    // Given: Preconditions for "syncFolder cleans deferred delete backups older than 30 days" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder cleans deferred delete backups older than 30 days" is verified.
+    // 주어진 것: "syncFolder cleans deferred delete backups older than 30 days" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder cleans deferred delete backups older than 30 days"의 기대 동작이 검증됨.
+    fun `syncFolder cleans deferred delete backups older than 30 days`() = runBlocking {
+        val folderId = "cleanup-folder-id"
+        val localRoot = File(tempFolder.root, "cleanup-root").apply { mkdirs() }
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "acc-id",
+            accountEmail = "test@example.com",
+            localPath = localRoot.absolutePath,
+            driveFolderId = "drive-id",
+            driveFolderName = "Drive",
+            lastSyncedAt = 1000L,
+            lastStartPageToken = "token"
+        )
+        val oldArchiveDir = File(localRoot, "conflicts_backup/deferred_delete/old_batch").apply { mkdirs() }
+        File(oldArchiveDir, "old.txt").writeText("old")
+        oldArchiveDir.setLastModified(System.currentTimeMillis() - (31L * 24 * 60 * 60 * 1000))
+
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockDriveHelper.getChanges("token") } returns DriveChangeResult(emptyList(), null, "new-token")
+        coEvery { mockSyncItemDao.getSyncItemsByFolder(folderId) } returns flowOf(listOf(
+            SyncItemEntity(
+                id = "tracked",
+                syncFolderId = folderId,
+                accountId = "acc-id",
+                accountEmail = "test@example.com",
+                localPath = File(localRoot, "keep.txt").absolutePath,
+                driveFileId = "drive-keep",
+                fileName = "keep.txt",
+                mimeType = "text/plain",
+                localModifiedAt = 1000L,
+                driveModifiedAt = 1000L,
+                localSize = 1L,
+                driveSize = 1L,
+                status = SyncStatus.SYNCED
+            )
+        ))
+        coEvery { mockDirtyLocalDao.getDirtyItemsByFolder(folderId) } returns emptyList()
+        coEvery { mockDriveHelper.listAllFiles(any(), any()) } returns emptyList()
+        coEvery { mockDriveHelper.getStartPageToken() } returns "new-token"
+        coEvery { mockSyncFolderDao.updatePageToken(folderId, "new-token") } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+
+        val result = syncManager.syncFolder(folderId)
+
+        assertTrue(result is SyncResult.Success)
+        assertFalse("Deferred delete backup older than 30 days should be removed", oldArchiveDir.exists())
     }
 
     @Test
@@ -1401,6 +1586,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder skips files containing _local" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder skips files containing _local" is verified.
+    // 주어진 것: "syncFolder skips files containing _local" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder skips files containing _local"의 기대 동작이 검증됨.
     fun `syncFolder skips files containing _local`() {
         runBlocking {
         println("Testing skipping of files containing _local...")
@@ -1438,6 +1631,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder logs exception name when message is null" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder logs exception name when message is null" is verified.
+    // 주어진 것: "syncFolder logs exception name when message is null" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder logs exception name when message is null"의 기대 동작이 검증됨.
     fun `syncFolder logs exception name when message is null`() {
         runBlocking {
         println("Testing logging of exception name when message is null...")
@@ -1460,6 +1661,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncFolder rethrows ConnectException as fatal" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder rethrows ConnectException as fatal" is verified.
+    // 주어진 것: "syncFolder rethrows ConnectException as fatal" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder rethrows ConnectException as fatal"의 기대 동작이 검증됨.
     fun `syncFolder rethrows ConnectException as fatal`() {
         runBlocking {
         println("Testing handling of ConnectException as fatal error...")
@@ -1485,6 +1694,14 @@ class SyncManagerTest {
         step = "1. DB에 있는 폴더 목킹 | 2. 로컬 수정 시간 변경 | 3. processFilePair 호출",
         expected = "updateFile을 호출하지 않고 DB 메타데이터만 업데이트해야 함"
     )
+    // Given: Preconditions for "testProcessFilePairHandlesExistingDirectory prevents EISDIR" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "testProcessFilePairHandlesExistingDirectory prevents EISDIR" is verified.
+    // 주어진 것: "testProcessFilePairHandlesExistingDirectory prevents EISDIR" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "testProcessFilePairHandlesExistingDirectory prevents EISDIR"의 기대 동작이 검증됨.
     fun `testProcessFilePairHandlesExistingDirectory prevents EISDIR`() = runBlocking {
         println("설명: 기존 폴더 처리 시 EISDIR 오류 방지 검증 | 예상결과: SUCCESS | 실제결과: 시작")
         
@@ -1546,6 +1763,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "testSyncChangesHandlesRemovalEvenIfLocalFileMissing" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "testSyncChangesHandlesRemovalEvenIfLocalFileMissing" is verified.
+    // 주어진 것: "testSyncChangesHandlesRemovalEvenIfLocalFileMissing" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "testSyncChangesHandlesRemovalEvenIfLocalFileMissing"의 기대 동작이 검증됨.
     fun `testSyncChangesHandlesRemovalEvenIfLocalFileMissing`() = runBlocking {
         println("Testing Phase 2: DB cleanup even if local file is already missing...")
         val folderId = "folder-id"
@@ -1575,6 +1800,14 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "testSyncDirtyItemsHandlesServerDeletionInsteadOfReupload" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "testSyncDirtyItemsHandlesServerDeletionInsteadOfReupload" is verified.
+    // 주어진 것: "testSyncDirtyItemsHandlesServerDeletionInsteadOfReupload" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "testSyncDirtyItemsHandlesServerDeletionInsteadOfReupload"의 기대 동작이 검증됨.
     fun `testSyncDirtyItemsHandlesServerDeletionInsteadOfReupload`() = runBlocking {
         println("Testing Phase 3: Targeted sync deletes local file if Drive counterpart is gone...")
         val folderId = "folder-id"
@@ -1611,6 +1844,211 @@ class SyncManagerTest {
     }
 
     @Test
+    // Given: Preconditions for "syncDirtyItems ensures nested Drive parent folders before upload" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncDirtyItems ensures nested Drive parent folders before upload" is verified.
+    // 주어진 것: "syncDirtyItems ensures nested Drive parent folders before upload" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncDirtyItems ensures nested Drive parent folders before upload"의 기대 동작이 검증됨.
+    fun `syncDirtyItems ensures nested Drive parent folders before upload`() = runBlocking {
+        val folderId = "folder-id"
+        val root = File(tempFolder.root, "root").apply { mkdirs() }
+        val nestedDir = File(root, "level1/level2").apply { mkdirs() }
+        val localFile = File(nestedDir, "new.txt").apply { writeText("new content") }
+
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = root.absolutePath,
+            driveFolderId = "drive-root",
+            driveFolderName = "root"
+        )
+
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, 8))
+
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(File(root, "level1").absolutePath) } returns null
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(File(root, "level1/level2").absolutePath) } returns null
+
+        coEvery { mockDriveHelper.findFolder("level1", "drive-root") } returns null
+        coEvery { mockDriveHelper.createFolder("level1", "drive-root") } returns DriveItem(
+            id = "drive-level1",
+            name = "level1",
+            mimeType = DriveServiceHelper.MIME_TYPE_FOLDER,
+            modifiedTime = 1000L,
+            size = 0L,
+            parentIds = listOf("drive-root"),
+            isFolder = true
+        )
+        coEvery { mockDriveHelper.findFolder("level2", "drive-level1") } returns null
+        coEvery { mockDriveHelper.createFolder("level2", "drive-level1") } returns DriveItem(
+            id = "drive-level2",
+            name = "level2",
+            mimeType = DriveServiceHelper.MIME_TYPE_FOLDER,
+            modifiedTime = 1001L,
+            size = 0L,
+            parentIds = listOf("drive-level1"),
+            isFolder = true
+        )
+        coEvery { mockDriveHelper.findFile(localFile.name, "drive-level2") } returns null
+        coEvery {
+            mockDriveHelper.uploadFile(localFile.absolutePath, localFile.name, "drive-level2", any())
+        } returns DriveItem(
+            id = "drive-file-id",
+            name = localFile.name,
+            mimeType = "text/plain",
+            modifiedTime = 2000L,
+            size = localFile.length(),
+            md5Checksum = "test-md5",
+            parentIds = listOf("drive-level2"),
+            isFolder = false
+        )
+
+        val result = syncManager.syncDirtyItems(folder, dirtyItems)
+
+        assertEquals(1, result.uploaded)
+        assertEquals(0, result.errors)
+        coVerify { mockDriveHelper.createFolder("level1", "drive-root") }
+        coVerify { mockDriveHelper.createFolder("level2", "drive-level1") }
+        coVerify { mockDriveHelper.uploadFile(localFile.absolutePath, localFile.name, "drive-level2", any()) }
+    }
+
+    @Test
+    // Given: Preconditions for "syncDirtyItems rename sends null removeParents when parent unchanged" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncDirtyItems rename sends null removeParents when parent unchanged" is verified.
+    // 주어진 것: "syncDirtyItems rename sends null removeParents when parent unchanged" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncDirtyItems rename sends null removeParents when parent unchanged"의 기대 동작이 검증됨.
+    fun `syncDirtyItems rename sends null removeParents when parent unchanged`() = runBlocking {
+        val folderId = "folder-id"
+        val root = File(tempFolder.root, "rename-root").apply { mkdirs() }
+        val oldPath = File(root, "old.txt").absolutePath
+        val newFile = File(root, "renamed.txt").apply { writeText("same") }
+        val driveFileId = "drive-file-id"
+
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = root.absolutePath,
+            driveFolderId = "drive-root",
+            driveFolderName = "root"
+        )
+
+        val existingItem = SyncItemEntity(
+            id = "item-id",
+            syncFolderId = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = oldPath,
+            driveFileId = driveFileId,
+            fileName = "old.txt",
+            mimeType = "text/plain",
+            localModifiedAt = 1000L,
+            driveModifiedAt = 1000L,
+            localSize = newFile.length(),
+            driveSize = newFile.length(),
+            md5Checksum = "test-md5",
+            status = SyncStatus.SYNCED
+        )
+
+        val dirtyItems = listOf(
+            DirtyLocalItemEntity(oldPath, folderId, 64),
+            DirtyLocalItemEntity(newFile.absolutePath, folderId, 128)
+        )
+
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(oldPath) } returns existingItem
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(newFile.absolutePath) } returns null
+        coEvery { mockDriveHelper.getFile(driveFileId) } returns DriveItem(
+            id = driveFileId,
+            name = "old.txt",
+            mimeType = "text/plain",
+            modifiedTime = 1000L,
+            size = newFile.length(),
+            md5Checksum = "test-md5",
+            parentIds = listOf("drive-root"),
+            isFolder = false
+        )
+        coEvery {
+            mockDriveHelper.updateMetadata(
+                fileId = driveFileId,
+                newName = "renamed.txt",
+                addParents = null,
+                removeParents = null
+            )
+        } returns true
+
+        val result = syncManager.syncDirtyItems(folder, dirtyItems)
+
+        assertEquals(1, result.uploaded)
+        coVerify {
+            mockDriveHelper.updateMetadata(
+                fileId = driveFileId,
+                newName = "renamed.txt",
+                addParents = null,
+                removeParents = null
+            )
+        }
+        coVerify(exactly = 0) { mockDriveHelper.uploadFile(any(), any(), any(), any()) }
+    }
+
+    @Test
+    // Given: Preconditions for "syncFolder honors folder syncDirection over default preference" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncFolder honors folder syncDirection over default preference" is verified.
+    // 주어진 것: "syncFolder honors folder syncDirection over default preference" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncFolder honors folder syncDirection over default preference"의 기대 동작이 검증됨.
+    fun `syncFolder honors folder syncDirection over default preference`() = runBlocking {
+        val root = File(tempFolder.root, "dir-policy").apply { mkdirs() }
+        val localFile = File(root, "upload_me.txt").apply { writeText("content") }
+        val folderId = "folder-direction"
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = root.absolutePath,
+            driveFolderId = "drive-root",
+            driveFolderName = "root",
+            syncDirection = SyncDirection.DOWNLOAD_ONLY
+        )
+
+        every { mockSyncPreferences.defaultSyncDirection } returns SyncDirection.BIDIRECTIONAL
+        every { mockSyncPreferences.autoUploadEnabled } returns true
+
+        coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+        every { mockDriveHelper.initializeDriveService(any()) } returns true
+        coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+        coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+        coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+        coEvery { mockDriveHelper.listAllFiles(any(), any()) } returns emptyList()
+        coEvery { mockDriveHelper.getStartPageToken() } returns "token"
+        coEvery { mockSyncFolderDao.updatePageToken(folderId, "token") } just Runs
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
+
+        val result = syncManager.syncFolder(folderId)
+
+        assertTrue(result is SyncResult.Success)
+        coVerify(exactly = 0) { mockDriveHelper.uploadFile(any(), any(), any(), any()) }
+    }
+
+    @Test
+    // Given: Preconditions for "testLocalDeletionIsSyncedToServer" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "testLocalDeletionIsSyncedToServer" is verified.
+    // 주어진 것: "testLocalDeletionIsSyncedToServer" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "testLocalDeletionIsSyncedToServer"의 기대 동작이 검증됨.
     fun `testLocalDeletionIsSyncedToServer`() = runBlocking {
         println("Testing: Local deletion should be synced to Google Drive...")
         val folderId = "folder-id"
@@ -1631,8 +2069,8 @@ class SyncManagerTest {
         // Mock DB: item exists at this path
         coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
         
-        // Dirty item event: file was modified/deleted (MODIFY event 8 is often used for both in this app's simplified logic or the observer triggers it)
-        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, 8))
+        // Dirty item event: explicit local delete event
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, FileObserver.DELETE))
         coEvery { mockDirtyLocalDao.getDirtyItemsByFolder(folderId) } returns dirtyItems
         
         // Drive lookup returns the file (it's still there!)
@@ -1651,6 +2089,244 @@ class SyncManagerTest {
         coVerify { mockDriveHelper.delete(driveFileId) }
         coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
         println("  Verified local deletion was synced to server.")
+    }
+
+    @Test
+    // Given: Local path is missing but dirty event is non-delete (e.g., MODIFY).
+    // And: Item is tracked with driveFileId.
+    // When: syncDirtyItems runs.
+    // Then: Do not delete on Drive (defensive skip).
+    // 주어진 것: 로컬 경로가 없지만 dirty 이벤트가 비삭제(MODIFY 등)임.
+    // 그리고: 항목은 driveFileId로 추적 중임.
+    // 언제: syncDirtyItems 실행 시.
+    // 그러면: Drive 삭제를 수행하지 않음(보수적 스킵).
+    fun `syncDirtyItems does not delete Drive file when missing local path is not a delete event`() = runBlocking {
+        val folderId = "folder-id"
+        val localFile = File(context.cacheDir, "missing-not-delete.txt")
+        if (localFile.exists()) {
+            localFile.delete()
+        }
+        val driveFileId = "drive-id-keep"
+
+        val folder = SyncFolderEntity(
+            folderId,
+            "acc",
+            "email",
+            context.cacheDir.absolutePath,
+            "drive-root",
+            "root",
+            lastSyncedAt = 1000L,
+            lastStartPageToken = "existing-token"
+        )
+        val existingItem = SyncItemEntity(
+            id = "item-id",
+            syncFolderId = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = localFile.absolutePath,
+            driveFileId = driveFileId,
+            fileName = "missing-not-delete.txt",
+            mimeType = "text/plain",
+            localModifiedAt = 1000L,
+            driveModifiedAt = 1000L,
+            localSize = 10L,
+            driveSize = 10L,
+            status = SyncStatus.SYNCED
+        )
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, FileObserver.MODIFY))
+
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+
+        val result = syncManager.syncDirtyItems(folder, dirtyItems)
+
+        assertEquals(0, result.uploaded)
+        assertEquals(0, result.errors)
+        coVerify(exactly = 0) { mockDriveHelper.delete(any()) }
+        coVerify(exactly = 0) { mockSyncItemDao.deleteSyncItem(existingItem) }
+    }
+
+    @Test
+    // Given: DB has tracked driveFileId and local file changed.
+    // And: Drive metadata exists but parent is outside current sync root.
+    // When: syncDirtyItems runs.
+    // Then: Keep tracked driveFileId (no name-based relink) and update using existing ID.
+    // 주어진 것: DB에 추적 driveFileId가 있고 로컬 파일이 변경됨.
+    // 그리고: Drive 메타데이터는 존재하지만 부모가 현재 동기화 루트 밖임.
+    // 언제: syncDirtyItems 실행 시.
+    // 그러면: 이름 기반 재링크 없이 기존 driveFileId를 유지하고 해당 ID로 업데이트.
+    fun `syncDirtyItems keeps tracked drive id when parent mismatches`() = runBlocking {
+        val folderId = "folder-stale-id"
+        val root = File(tempFolder.root, "stale-id-root").apply { mkdirs() }
+        val localFile = File(root, "1_2_3_4.md").apply { writeText("newer") }
+        val oldDriveId = "drive-old-id"
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = root.absolutePath,
+            driveFolderId = "drive-root",
+            driveFolderName = "root"
+        )
+        val existingItem = SyncItemEntity(
+            id = "item-stale",
+            syncFolderId = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = localFile.absolutePath,
+            driveFileId = oldDriveId,
+            fileName = localFile.name,
+            mimeType = "text/markdown",
+            localModifiedAt = localFile.lastModified() - 10_000,
+            driveModifiedAt = 1_000L,
+            localSize = 1L,
+            driveSize = 1L,
+            status = SyncStatus.SYNCED
+        )
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, FileObserver.MODIFY))
+
+        every { mockSyncPreferences.autoUploadEnabled } returns true
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        coEvery { mockDriveHelper.getFile(oldDriveId) } returns DriveItem(
+            id = oldDriveId,
+            name = localFile.name,
+            mimeType = "text/markdown",
+            modifiedTime = 1_000L,
+            size = 1L,
+            md5Checksum = "old-md5",
+            parentIds = listOf("outside-root"),
+            isFolder = false
+        )
+        coEvery { mockDriveHelper.updateFile(oldDriveId, localFile.absolutePath, any()) } returns DriveItem(
+            id = oldDriveId,
+            name = localFile.name,
+            mimeType = "text/markdown",
+            modifiedTime = 2_000L,
+            size = localFile.length(),
+            md5Checksum = "new-md5",
+            parentIds = listOf("drive-root"),
+            isFolder = false
+        )
+
+        val result = syncManager.syncDirtyItems(folder, dirtyItems)
+
+        assertEquals(1, result.uploaded)
+        assertEquals(0, result.errors)
+        coVerify { mockDriveHelper.updateFile(oldDriveId, localFile.absolutePath, any()) }
+        coVerify(exactly = 0) { mockDriveHelper.findFile(localFile.name, "drive-root") }
+    }
+
+    @Test
+    // Given: Local path is missing and dirty event is MOVED_FROM.
+    // And: Item is tracked with driveFileId.
+    // When: syncDirtyItems runs.
+    // Then: Treat as delete-like event and propagate delete to Drive.
+    // 주어진 것: 로컬 경로가 없고 dirty 이벤트가 MOVED_FROM임.
+    // 그리고: 항목은 driveFileId로 추적 중임.
+    // 언제: syncDirtyItems 실행 시.
+    // 그러면: 삭제성 이벤트로 간주하고 Drive 삭제를 반영.
+    fun `syncDirtyItems treats MOVED_FROM as delete event and syncs deletion to Drive`() = runBlocking {
+        val folderId = "folder-id-moved-from"
+        val localFile = File(context.cacheDir, "moved_from_delete.txt")
+        if (localFile.exists()) {
+            localFile.delete()
+        }
+        val driveFileId = "drive-id-moved-from"
+
+        val folder = SyncFolderEntity(
+            folderId,
+            "acc",
+            "email",
+            context.cacheDir.absolutePath,
+            "drive-root",
+            "root"
+        )
+        val existingItem = SyncItemEntity(
+            id = "item-moved-from",
+            syncFolderId = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = localFile.absolutePath,
+            driveFileId = driveFileId,
+            fileName = "moved_from_delete.txt",
+            mimeType = "text/plain",
+            localModifiedAt = 1000L,
+            driveModifiedAt = 1000L,
+            localSize = 10L,
+            driveSize = 10L,
+            status = SyncStatus.SYNCED
+        )
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, FileObserver.MOVED_FROM))
+
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        coEvery { mockDriveHelper.delete(driveFileId) } returns true
+        coEvery { mockSyncItemDao.deleteSyncItem(existingItem) } just Runs
+
+        val result = syncManager.syncDirtyItems(folder, dirtyItems)
+
+        assertEquals(0, result.errors)
+        coVerify { mockDriveHelper.delete(driveFileId) }
+        coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
+    }
+
+    @Test
+    // Given: Preconditions for "syncDirtyItems reuploads when tracked drive id is stale and no file is found" are prepared.
+    // And: Required mocks and test data are configured.
+    // When: The target action is executed in this test.
+    // Then: Expected behavior for "syncDirtyItems reuploads when tracked drive id is stale and no file is found" is verified.
+    // 주어진 것: "syncDirtyItems reuploads when tracked drive id is stale and no file is found" 테스트의 사전 조건이 준비되어 있음.
+    // 그리고: 필요한 목(mock)과 테스트 데이터가 구성되어 있음.
+    // 언제: 이 테스트에서 대상 동작을 실행하면.
+    // 그러면: "syncDirtyItems reuploads when tracked drive id is stale and no file is found"의 기대 동작이 검증됨.
+    fun `syncDirtyItems reuploads when tracked drive id is stale and no file is found`() = runBlocking {
+        val folderId = "folder-reupload"
+        val root = File(tempFolder.root, "reupload-root").apply { mkdirs() }
+        val localFile = File(root, "1_2_3_4.md").apply { writeText("content-new") }
+        val staleDriveId = "drive-stale"
+        val folder = SyncFolderEntity(
+            id = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = root.absolutePath,
+            driveFolderId = "drive-root",
+            driveFolderName = "root"
+        )
+        val existingItem = SyncItemEntity(
+            id = "item-reupload",
+            syncFolderId = folderId,
+            accountId = "acc",
+            accountEmail = "email",
+            localPath = localFile.absolutePath,
+            driveFileId = staleDriveId,
+            fileName = localFile.name,
+            mimeType = "text/markdown",
+            localModifiedAt = localFile.lastModified() - 10_000,
+            driveModifiedAt = 1_000L,
+            localSize = 1L,
+            driveSize = 1L,
+            status = SyncStatus.SYNCED
+        )
+        val dirtyItems = listOf(DirtyLocalItemEntity(localFile.absolutePath, folderId, FileObserver.MODIFY))
+
+        every { mockSyncPreferences.autoUploadEnabled } returns true
+        coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns existingItem
+        coEvery { mockDriveHelper.getFile(staleDriveId) } returns null
+        coEvery { mockDriveHelper.findFile(localFile.name, "drive-root") } returns null
+        coEvery { mockDriveHelper.uploadFile(localFile.absolutePath, localFile.name, "drive-root", any()) } returns DriveItem(
+            id = "drive-reuploaded",
+            name = localFile.name,
+            mimeType = "text/markdown",
+            modifiedTime = 2_000L,
+            size = localFile.length(),
+            md5Checksum = "new-md5",
+            parentIds = listOf("drive-root"),
+            isFolder = false
+        )
+
+        val result = syncManager.syncDirtyItems(folder, dirtyItems)
+
+        assertEquals(1, result.uploaded)
+        assertEquals(0, result.errors)
+        coVerify { mockDriveHelper.uploadFile(localFile.absolutePath, localFile.name, "drive-root", any()) }
     }
 
     @org.junit.After

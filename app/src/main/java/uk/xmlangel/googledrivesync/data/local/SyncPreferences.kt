@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.sync.ConflictResolution
+import uk.xmlangel.googledrivesync.sync.SyncExclusions
+import uk.xmlangel.googledrivesync.sync.SyncExclusionType
 
 /**
  * Preferences for sync settings
@@ -25,6 +27,8 @@ class SyncPreferences(context: Context) {
         private const val KEY_DEFAULT_CONFLICT_RESOLUTION = "default_conflict_resolution"
         private const val KEY_DEFAULT_SYNC_DIRECTION = "default_sync_direction"
         private const val KEY_AUTO_UPLOAD_ENABLED = "auto_upload_enabled"
+        private const val KEY_REALTIME_SYNC_ENABLED = "realtime_sync_enabled"
+        private const val KEY_USER_EXCLUDED_PATHS = "user_excluded_paths"
         
         const val DEFAULT_SYNC_INTERVAL = 15 // minutes (Default changed from 60 to 15)
     }
@@ -100,6 +104,80 @@ class SyncPreferences(context: Context) {
     var autoUploadEnabled: Boolean
         get() = prefs.getBoolean(KEY_AUTO_UPLOAD_ENABLED, true)
         set(value) = prefs.edit { putBoolean(KEY_AUTO_UPLOAD_ENABLED, value) }
+
+    /**
+     * Enable realtime local file observer based sync trigger.
+     * This is separate from periodic WorkManager schedule.
+     */
+    var realtimeSyncEnabled: Boolean
+        get() = prefs.getBoolean(KEY_REALTIME_SYNC_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(KEY_REALTIME_SYNC_ENABLED, value) }
+
+    /**
+     * User-defined exclusion rules stored as tokens:
+     * - file:<relative/path>
+     * - directory:<relative/path>
+     * - pattern:<glob-pattern>
+     *
+     * Backward compatibility: legacy plain paths are migrated to file:<path>.
+     */
+    var userExcludedPaths: Set<String>
+        get() = prefs.getStringSet(KEY_USER_EXCLUDED_PATHS, emptySet())
+            ?.mapNotNull { token ->
+                val trimmed = token.trim()
+                if (trimmed.isBlank()) return@mapNotNull null
+                if (trimmed.contains(":")) {
+                    val sep = trimmed.indexOf(':')
+                    val type = trimmed.substring(0, sep).lowercase()
+                    val value = SyncExclusions.normalizeRelativePath(trimmed.substring(sep + 1))
+                    if (value.isBlank()) return@mapNotNull null
+                    if (type !in setOf("file", "directory", "pattern")) return@mapNotNull null
+                    val normalized = "$type:$value"
+                    if (type == "file" && SyncExclusions.isDefaultRelativePath(value)) return@mapNotNull null
+                    normalized
+                } else {
+                    // Legacy format: plain relative path => file rule
+                    val value = SyncExclusions.normalizeRelativePath(trimmed)
+                    if (value.isBlank() || SyncExclusions.isDefaultRelativePath(value)) return@mapNotNull null
+                    "file:$value"
+                }
+            }
+            ?.toSet()
+            ?: emptySet()
+        set(value) {
+            val normalized = value
+                .mapNotNull { token ->
+                    val sep = token.indexOf(':')
+                    if (sep <= 0) return@mapNotNull null
+                    val type = token.substring(0, sep).lowercase()
+                    val rawValue = token.substring(sep + 1)
+                    val normValue = SyncExclusions.normalizeRelativePath(rawValue)
+                    if (normValue.isBlank()) return@mapNotNull null
+                    if (type !in setOf("file", "directory", "pattern")) return@mapNotNull null
+                    if (type == "file" && SyncExclusions.isDefaultRelativePath(normValue)) return@mapNotNull null
+                    "$type:$normValue"
+                }
+                .toSet()
+            prefs.edit { putStringSet(KEY_USER_EXCLUDED_PATHS, normalized) }
+        }
+
+    fun addUserExcludedPath(relativePath: String) {
+        addUserExcludedRule(SyncExclusionType.FILE, relativePath)
+    }
+
+    fun addUserExcludedRule(type: SyncExclusionType, value: String) {
+        val token = SyncExclusions.buildUserRuleToken(type, value) ?: return
+        userExcludedPaths = userExcludedPaths + token
+    }
+
+    fun removeUserExcludedPath(relativePath: String) {
+        val normalized = SyncExclusions.normalizeRelativePath(relativePath)
+        userExcludedPaths = userExcludedPaths - "file:$normalized"
+    }
+
+    fun removeUserExcludedRule(token: String) {
+        userExcludedPaths = userExcludedPaths - token.trim()
+    }
         
     /**
      * Available sync interval options (in minutes)

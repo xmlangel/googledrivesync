@@ -1,5 +1,6 @@
 package uk.xmlangel.googledrivesync.ui.navigation
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,14 +30,19 @@ sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
     object FolderBrowser : Screen("folder_browser")
     object Settings : Screen("settings")
+    object SyncExclusions : Screen("sync_exclusions")
     object SyncLogs : Screen("sync_logs")
+    object SyncVerificationReport : Screen("sync_verification/{folderId}/{folderName}") {
+        fun createRoute(folderId: String, folderName: String) =
+            "sync_verification/$folderId/$folderName"
+    }
     object SyncedFolderFile : Screen("synced_folder_files/{folderId}/{folderName}") {
         fun createRoute(folderId: String, folderName: String) = 
             "synced_folder_files/$folderId/$folderName"
     }
-    object LocalFolderPicker : Screen("local_folder_picker/{driveFolderId}/{driveFolderName}") {
-        fun createRoute(driveFolderId: String, driveFolderName: String) = 
-            "local_folder_picker/$driveFolderId/$driveFolderName"
+    object LocalFolderPicker : Screen("local_folder_picker/{driveFolderId}/{driveFolderName}/{isExistingDriveFolder}") {
+        fun createRoute(driveFolderId: String, driveFolderName: String, isExistingDriveFolder: Boolean) =
+            "local_folder_picker/$driveFolderId/$driveFolderName/$isExistingDriveFolder"
     }
 }
 
@@ -150,9 +156,9 @@ fun NavGraph(
         composable(Screen.FolderBrowser.route) {
             FolderBrowserScreen(
                 driveHelper = driveHelper,
-                onFolderSelected = { folderId, folderName ->
+                onFolderSelected = { folderId, folderName, isExistingFolder ->
                     navController.navigate(
-                        Screen.LocalFolderPicker.createRoute(folderId, folderName)
+                        Screen.LocalFolderPicker.createRoute(folderId, folderName, isExistingFolder)
                     )
                 },
                 onNavigateBack = {
@@ -164,20 +170,37 @@ fun NavGraph(
         composable(Screen.LocalFolderPicker.route) { backStackEntry ->
             val driveFolderId = backStackEntry.arguments?.getString("driveFolderId") ?: "root"
             val driveFolderName = backStackEntry.arguments?.getString("driveFolderName") ?: "내 드라이브"
+            val isExistingDriveFolder = backStackEntry.arguments?.getString("isExistingDriveFolder")?.toBooleanStrictOrNull() ?: true
             
             LocalFolderPickerScreen(
                 driveFolderId = driveFolderId,
                 driveFolderName = driveFolderName,
-                onFolderSelected = { localPath: String ->
+                isExistingDriveFolder = isExistingDriveFolder,
+                onFolderSelected = { localPath: String, clearLocalData: Boolean ->
                     activeAccount?.let { account ->
                         CoroutineScope(Dispatchers.Main).launch {
+                            if (clearLocalData) {
+                                val cleared = syncManager.clearLocalFolderContents(localPath)
+                                if (!cleared) {
+                                    Toast.makeText(
+                                        context,
+                                        "로컬 폴더 초기화 중 일부 항목 삭제에 실패했습니다.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            } else if (isExistingDriveFolder) {
+                                Toast.makeText(
+                                    context,
+                                    "경고: 삭제 없이 연결하면 중복 파일 업로드/삭제가 발생할 수 있습니다.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                             syncManager.addSyncFolder(
                                 accountId = account.id,
                                 accountEmail = account.email,
                                 localPath = localPath,
                                 driveFolderId = driveFolderId,
-                                driveFolderName = driveFolderName,
-                                // direction parameter removed to use default from implementation
+                                driveFolderName = driveFolderName
                             )
                         }
                     }
@@ -195,8 +218,26 @@ fun NavGraph(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
+                onNavigateToExclusions = {
+                    navController.navigate(Screen.SyncExclusions.route)
+                },
                 onScheduleSync = {
                     SyncWorker.schedule(context)
+                    if (syncPreferences.autoSyncEnabled && syncPreferences.realtimeSyncEnabled) {
+                        syncManager.startMonitoringFolders()
+                    } else {
+                        syncManager.stopMonitoringFolders()
+                    }
+                }
+            )
+        }
+
+        composable(Screen.SyncExclusions.route) {
+            SyncExclusionsScreen(
+                database = database,
+                syncPreferences = syncPreferences,
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }
@@ -215,6 +256,25 @@ fun NavGraph(
             
             SyncedFolderFileScreen(
                 database = database,
+                folderId = folderId,
+                folderName = folderName,
+                onNavigateToVerification = { verifyFolderId, verifyFolderName ->
+                    navController.navigate(
+                        Screen.SyncVerificationReport.createRoute(verifyFolderId, verifyFolderName)
+                    )
+                },
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Screen.SyncVerificationReport.route) { backStackEntry ->
+            val folderId = backStackEntry.arguments?.getString("folderId") ?: ""
+            val folderName = backStackEntry.arguments?.getString("folderName") ?: ""
+            SyncVerificationReportScreen(
+                database = database,
+                syncManager = syncManager,
                 folderId = folderId,
                 folderName = folderName,
                 onNavigateBack = {

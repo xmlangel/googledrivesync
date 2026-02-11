@@ -17,6 +17,9 @@ import uk.xmlangel.googledrivesync.data.local.SyncDatabase
 import uk.xmlangel.googledrivesync.data.local.SyncFolderDao
 import uk.xmlangel.googledrivesync.data.local.SyncFolderEntity
 import uk.xmlangel.googledrivesync.data.local.SyncPreferences
+import uk.xmlangel.googledrivesync.util.TestMetadata
+import uk.xmlangel.googledrivesync.util.TestMetadataRule
+import org.junit.Rule
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -27,6 +30,9 @@ class SyncWorkerTest {
     private lateinit var mockDatabase: SyncDatabase
     private lateinit var mockSyncFolderDao: SyncFolderDao
     private lateinit var mockPrefs: SyncPreferences
+
+    @get:Rule
+    val metadataRule = TestMetadataRule()
 
     @Before
     fun setUp() {
@@ -51,7 +57,13 @@ class SyncWorkerTest {
     }
 
     @Test
+    @TestMetadata(
+        description = "활성 폴더 동기화 호출 검증",
+        step = "1. 활성 폴더 목록 목킹 | 2. Worker 실행 | 3. 각 폴더별 syncFolder 호출 확인",
+        expected = "모든 활성 폴더에 대해 syncFolder가 1회씩 호출되어야 함"
+    )
     fun `doWork calls syncFolder for all enabled folders`() = runBlocking {
+        println("설명: 활성 폴더 동기화 호출 검증 | 예상결과: SUCCESS | 실제결과: 시작")
         val folder1 = SyncFolderEntity("id1", "acc1", "email1", "/path1", "drive1", "folder1", isEnabled = true)
         val folder2 = SyncFolderEntity("id2", "acc2", "email2", "/path2", "drive2", "folder2", isEnabled = true)
         
@@ -61,7 +73,8 @@ class SyncWorkerTest {
         val worker = TestListenableWorkerBuilder<SyncWorker>(context).build()
         val result = worker.doWork()
         
-        assertEquals(ListenableWorker.Result.success(), result)
+        println("설명: 활성 폴더 동기화 호출 검증 | 예상결과: SUCCESS | 실제결과: $result")
+        assertEquals("Worker 결과가 Success가 아닙니다.", ListenableWorker.Result.success(), result)
         coVerify(exactly = 1) { mockSyncManager.syncFolder("id1") }
         coVerify(exactly = 1) { mockSyncManager.syncFolder("id2") }
     }

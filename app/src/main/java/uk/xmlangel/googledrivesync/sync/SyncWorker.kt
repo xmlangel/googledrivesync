@@ -171,6 +171,8 @@ class SyncWorker(
          * Schedule periodic sync with user-configured interval
          */
         fun schedule(context: Context) {
+            val logger = uk.xmlangel.googledrivesync.util.SyncLogger(context)
+            logger.log("SyncWorker.schedule() 호출됨")
             val prefs = SyncPreferences(context)
             
             if (!prefs.autoSyncEnabled) {

@@ -1,6 +1,7 @@
 package uk.xmlangel.googledrivesync.data.drive
 
 import android.content.Context
+import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.google.api.client.http.FileContent
@@ -12,6 +13,7 @@ import com.google.api.services.drive.model.File as DriveFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -89,25 +91,28 @@ class DriveServiceHelper(private val context: Context) {
             request.pageToken = pageToken
         }
         
-        val result = request.execute()
+        val result = runWithRetry { request.execute() }
         
         DriveListResult(
             files = result.files?.map { it.toDriveItem() } ?: emptyList(),
             nextPageToken = result.nextPageToken
         )
     }
-    
-    /**
-     * List all files in a folder, handling pagination automatically
+        /**
+     * List all files in a folder, handling pagination automatically.
+     * @param onProgress Callback invoked with the current count of retrieved files.
      */
-    suspend fun listAllFiles(folderId: String? = null): List<DriveItem> {
+    suspend fun listAllFiles(
+        folderId: String? = null,
+        onProgress: ((Int) -> Unit)? = null
+    ): List<DriveItem> {
         val allFiles = mutableListOf<DriveItem>()
         var pageToken: String? = null
-        
-        do {
+                do {
             val result = listFiles(folderId, pageSize = 100, pageToken = pageToken)
             allFiles.addAll(result.files)
             pageToken = result.nextPageToken
+            onProgress?.invoke(allFiles.size)
         } while (pageToken != null)
         
         return allFiles
@@ -118,7 +123,7 @@ class DriveServiceHelper(private val context: Context) {
      */
     suspend fun getStartPageToken(): String? = withContext(Dispatchers.IO) {
         try {
-            getDrive().changes().getStartPageToken().execute().startPageToken
+            runWithRetry { getDrive().changes().getStartPageToken().execute() }.startPageToken
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -131,9 +136,11 @@ class DriveServiceHelper(private val context: Context) {
      * Get changes since a specific page token
      */
     suspend fun getChanges(pageToken: String): DriveChangeResult = withContext(Dispatchers.IO) {
-        val result = getDrive().changes().list(pageToken)
-            .setFields("nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, modifiedTime, size, parents, md5Checksum))")
-            .execute()
+        val result = runWithRetry {
+            getDrive().changes().list(pageToken)
+                .setFields("nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, modifiedTime, size, parents, md5Checksum))")
+                .execute()
+        }
         
         DriveChangeResult(
             changes = result.changes?.map { it.toDriveChange() } ?: emptyList(),
@@ -146,9 +153,11 @@ class DriveServiceHelper(private val context: Context) {
      * Get file metadata
      */
     suspend fun getFileMetadata(fileId: String): DriveItem = withContext(Dispatchers.IO) {
-        val file = getDrive().files().get(fileId)
-            .setFields("id, name, mimeType, modifiedTime, size, parents, md5Checksum")
-            .execute()
+        val file = runWithRetry {
+            getDrive().files().get(fileId)
+                .setFields("id, name, mimeType, modifiedTime, size, parents, md5Checksum")
+                .execute()
+        }
         file.toDriveItem()
     }
 
@@ -171,12 +180,14 @@ class DriveServiceHelper(private val context: Context) {
     suspend fun findFile(name: String, parentId: String): DriveItem? = withContext(Dispatchers.IO) {
         try {
             val query = "name = '$name' and '$parentId' in parents and trashed = false"
-            val result = getDrive().files().list()
-                .setQ(query)
-                .setSpaces("drive")
-                .setFields("files(id, name, mimeType, modifiedTime, size, parents, md5Checksum)")
-                .setPageSize(1)
-                .execute()
+            val result = runWithRetry {
+                getDrive().files().list()
+                    .setQ(query)
+                    .setSpaces("drive")
+                    .setFields("files(id, name, mimeType, modifiedTime, size, parents, md5Checksum)")
+                    .setPageSize(1)
+                    .execute()
+            }
             
             result.files?.firstOrNull()?.toDriveItem()
         } catch (e: CancellationException) {
@@ -192,9 +203,11 @@ class DriveServiceHelper(private val context: Context) {
     suspend fun downloadFile(fileId: String, destinationPath: String): Boolean = 
         withContext(Dispatchers.IO) {
             // Get metadata first to check size and mimeType
-            val fileMetadata = getDrive().files().get(fileId)
-                .setFields("id, name, mimeType, size")
-                .execute()
+            val fileMetadata = runWithRetry {
+                getDrive().files().get(fileId)
+                    .setFields("id, name, mimeType, size")
+                    .execute()
+            }
             
             val mimeType = fileMetadata.mimeType
             val size = fileMetadata.getSize() ?: 0L
@@ -207,15 +220,26 @@ class DriveServiceHelper(private val context: Context) {
             
             val outputStream: OutputStream = FileOutputStream(destinationPath)
             
-            // 2. Handle Google Docs (Fix for 403 error)
+            // 2. Handle Non-Downloadable Google types (shortcuts, forms, etc.)
+            if (isNonDownloadable(mimeType)) {
+                // Log and skip instead of failing
+                // This prevents 400/403 errors for types that cannot be exported or downloaded
+                return@withContext true
+            }
+
+            // 3. Handle Google Docs (Export)
             if (isGoogleDoc(mimeType)) {
                 val exportMimeType = getExportMimeType(mimeType)
-                getDrive().files().export(fileId, exportMimeType)
-                    .executeMediaAndDownloadTo(outputStream)
+                runWithRetry {
+                    getDrive().files().export(fileId, exportMimeType)
+                        .executeMediaAndDownloadTo(outputStream)
+                }
             } else {
-                // Normal binary file
-                getDrive().files().get(fileId)
-                    .executeMediaAndDownloadTo(outputStream)
+                // 4. Normal binary file or unknown native type - try original format download
+                runWithRetry {
+                    getDrive().files().get(fileId)
+                        .executeMediaAndDownloadTo(outputStream)
+                }
             }
             
             outputStream.close()
@@ -223,8 +247,19 @@ class DriveServiceHelper(private val context: Context) {
         }
 
     private fun isGoogleDoc(mimeType: String?): Boolean {
-        return mimeType?.startsWith("application/vnd.google-apps.") == true &&
-                mimeType != MIME_TYPE_FOLDER
+        return mimeType == "application/vnd.google-apps.document" ||
+                mimeType == "application/vnd.google-apps.spreadsheet" ||
+                mimeType == "application/vnd.google-apps.presentation" ||
+                mimeType == "application/vnd.google-apps.drawing" ||
+                mimeType == "application/vnd.google-apps.script"
+    }
+
+    private fun isNonDownloadable(mimeType: String?): Boolean {
+        return mimeType == "application/vnd.google-apps.folder" ||
+                mimeType == "application/vnd.google-apps.shortcut" ||
+                mimeType == "application/vnd.google-apps.map" ||
+                mimeType == "application/vnd.google-apps.form" ||
+                mimeType == "application/vnd.google-apps.site"
     }
 
     private fun getExportMimeType(googleMimeType: String?): String {
@@ -234,7 +269,7 @@ class DriveServiceHelper(private val context: Context) {
             "application/vnd.google-apps.presentation" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             "application/vnd.google-apps.drawing" -> "image/png"
             "application/vnd.google-apps.script" -> "application/vnd.google-apps.script+json"
-            else -> "application/pdf"
+            else -> "application/pdf" // Should not be reached with refined isGoogleDoc
         }
     }
     
@@ -257,9 +292,11 @@ class DriveServiceHelper(private val context: Context) {
         val localFile = File(localPath)
         val mediaContent = FileContent(mimeType, localFile)
         
-        val file = getDrive().files().create(fileMetadata, mediaContent)
-            .setFields("id, name, mimeType, modifiedTime, size, parents")
-            .execute()
+        val file = runWithRetry {
+            getDrive().files().create(fileMetadata, mediaContent)
+                .setFields("id, name, mimeType, modifiedTime, size, parents")
+                .execute()
+        }
         
         file.toDriveItem()
     }
@@ -275,11 +312,46 @@ class DriveServiceHelper(private val context: Context) {
         val localFile = File(localPath)
         val mediaContent = FileContent(mimeType, localFile)
         
-        val file = getDrive().files().update(fileId, null, mediaContent)
-            .setFields("id, name, mimeType, modifiedTime, size, parents")
-            .execute()
+        val file = runWithRetry {
+            getDrive().files().update(fileId, null, mediaContent)
+                .setFields("id, name, mimeType, modifiedTime, size, parents")
+                .execute()
+        }
         
         file.toDriveItem()
+    }
+    
+    /**
+     * Update file metadata (name, parents) without changing content
+     */
+    suspend fun updateMetadata(
+        fileId: String,
+        newName: String? = null,
+        addParents: String? = null,
+        removeParents: String? = null
+    ): Boolean {
+        return try {
+            val fileMetadata = com.google.api.services.drive.model.File()
+            if (newName != null) {
+                fileMetadata.name = newName
+            }
+
+            runWithRetry {
+                val request = getDrive().files().update(fileId, fileMetadata)
+                if (addParents != null) {
+                    request.addParents = addParents
+                }
+                if (removeParents != null) {
+                    request.removeParents = removeParents
+                }
+                
+                request.setFields("id, name, parents").execute()
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("DriveServiceHelper", "Error updating metadata: ${e.message}")
+            false
+        }
     }
     
     /**
@@ -297,9 +369,11 @@ class DriveServiceHelper(private val context: Context) {
             }
         }
         
-        val file = getDrive().files().create(fileMetadata)
-            .setFields("id, name, mimeType, modifiedTime, parents")
-            .execute()
+        val file = runWithRetry {
+            getDrive().files().create(fileMetadata)
+                .setFields("id, name, mimeType, modifiedTime, parents")
+                .execute()
+        }
         
         file.toDriveItem()
     }
@@ -309,7 +383,7 @@ class DriveServiceHelper(private val context: Context) {
      */
     suspend fun delete(fileId: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            getDrive().files().delete(fileId).execute()
+            runWithRetry { getDrive().files().delete(fileId).execute() }
             true
         } catch (e: CancellationException) {
             throw e
@@ -325,14 +399,43 @@ class DriveServiceHelper(private val context: Context) {
     suspend fun searchFiles(query: String): List<DriveItem> = withContext(Dispatchers.IO) {
         val searchQuery = "name contains '$query' and trashed = false"
         
-        val result = getDrive().files().list()
-            .setQ(searchQuery)
-            .setSpaces("drive")
-            .setFields("files(id, name, mimeType, modifiedTime, size, parents)")
-            .setPageSize(50)
-            .execute()
+        val result = runWithRetry {
+            getDrive().files().list()
+                .setQ(searchQuery)
+                .setSpaces("drive")
+                .setFields("files(id, name, mimeType, modifiedTime, size, parents)")
+                .setPageSize(50)
+                .execute()
+        }
         
         result.files?.map { it.toDriveItem() } ?: emptyList()
+    }
+
+    /**
+     * Run a block of code with retry logic for SocketTimeoutException
+     */
+    private suspend fun <T> runWithRetry(
+        maxRetries: Int = 5,
+        block: suspend () -> T
+    ): T {
+        var lastException: Exception? = null
+        for (attempt in 1..maxRetries) {
+            try {
+                return block()
+            } catch (e: java.net.SocketTimeoutException) {
+                lastException = e
+                if (attempt == maxRetries) {
+                    Log.e("DriveServiceHelper", "최대 재시도 횟수($maxRetries) 초과: ${e.message}")
+                    throw e
+                }
+                
+                // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                val delayMillis = Math.pow(2.0, (attempt - 1).toDouble()).toLong() * 1000L
+                Log.w("DriveServiceHelper", "네트워크 타임아웃 발생 ($attempt/$maxRetries). ${delayMillis}ms 후 재시도합니다...")
+                delay(delayMillis)
+            }
+        }
+        throw lastException ?: java.io.IOException("재시도 실패")
     }
     
     companion object {

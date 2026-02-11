@@ -55,6 +55,7 @@ fun DashboardScreen(
         .collectAsState(initial = emptyList())
     
     val isSyncing by syncManager.isSyncing.collectAsState()
+    val operationStartedAtMs by syncManager.operationStartedAtMs.collectAsState()
     val syncProgress by syncManager.syncProgress.collectAsState()
     val lastSyncResult by syncManager.lastSyncResult.collectAsState()
     val pendingConflicts by syncManager.pendingConflicts.collectAsState()
@@ -67,7 +68,6 @@ fun DashboardScreen(
     var showUploadDialog by remember { mutableStateOf(false) }
     var showSkippedDialog by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
-    var syncStartedAt by remember { mutableStateOf<Long?>(null) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     
     // Intercept back button to move app to background
@@ -103,14 +103,6 @@ fun DashboardScreen(
     LaunchedEffect(pendingUploads, isSyncing) {
         if (pendingUploads.isNotEmpty() && !isSyncing) {
             showUploadDialog = true
-        }
-    }
-
-    LaunchedEffect(isSyncing) {
-        if (isSyncing && syncStartedAt == null) {
-            syncStartedAt = System.currentTimeMillis()
-        } else if (!isSyncing) {
-            syncStartedAt = null
         }
     }
 
@@ -236,7 +228,7 @@ fun DashboardScreen(
                 } else {
                     null
                 }
-                val elapsedMs = syncStartedAt?.let { nowMs - it } ?: 0L
+                val elapsedMs = operationStartedAtMs?.let { nowMs - it } ?: 0L
                 val operationLabel = when {
                     currentProgress == null -> "초기화"
                     currentProgress.statusMessage?.contains("검증", ignoreCase = false) == true -> "검증 단계"

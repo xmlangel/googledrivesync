@@ -40,6 +40,11 @@ class SyncManager internal constructor(
     private val syncPreferences: SyncPreferences = SyncPreferences(context),
     private val logger: uk.xmlangel.googledrivesync.util.SyncLogger = uk.xmlangel.googledrivesync.util.SyncLogger(context)
 ) {
+    enum class SyncOperationType {
+        SYNC,
+        FORCE_PULL
+    }
+
     data class ChangesDebugStats(
         val processed: Int,
         val removed: Int,
@@ -96,6 +101,10 @@ class SyncManager internal constructor(
     
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+    private val _currentOperation = MutableStateFlow<SyncOperationType?>(null)
+    val currentOperation: StateFlow<SyncOperationType?> = _currentOperation.asStateFlow()
+    private val _operationStartedAtMs = MutableStateFlow<Long?>(null)
+    val operationStartedAtMs: StateFlow<Long?> = _operationStartedAtMs.asStateFlow()
 
     private val _lastSyncResult = MutableStateFlow<SyncResult?>(null)
     val lastSyncResult: StateFlow<SyncResult?> = _lastSyncResult.asStateFlow()
@@ -125,6 +134,18 @@ class SyncManager internal constructor(
     private val pendingResyncFolderIds = linkedSetOf<String>()
     private val pendingUploadProcessingPaths = mutableSetOf<String>()
     private val cancelledFolderIds = mutableSetOf<String>()
+
+    private fun beginOperation(type: SyncOperationType) {
+        _currentOperation.value = type
+        _operationStartedAtMs.value = System.currentTimeMillis()
+    }
+
+    private fun endOperation(type: SyncOperationType) {
+        if (_currentOperation.value == type) {
+            _currentOperation.value = null
+            _operationStartedAtMs.value = null
+        }
+    }
 
     private fun getSyncDirection(folder: SyncFolderEntity): SyncDirection = folder.syncDirection
     private fun isUploadBlocked(folder: SyncFolderEntity): Boolean =
@@ -443,6 +464,7 @@ class SyncManager internal constructor(
         }
         
         _isSyncing.value = true
+        beginOperation(SyncOperationType.SYNC)
         _lastSyncResult.value = null
         
         try {
@@ -807,6 +829,7 @@ class SyncManager internal constructor(
             }
             _isSyncing.value = false
             _syncProgress.value = null
+            endOperation(SyncOperationType.SYNC)
             val nextFolderId = synchronized(pendingResyncFolderIds) {
                 pendingResyncFolderIds.firstOrNull()?.also { pendingResyncFolderIds.remove(it) }
             }
@@ -3152,6 +3175,7 @@ class SyncManager internal constructor(
         }
 
         _isSyncing.value = true
+        beginOperation(SyncOperationType.FORCE_PULL)
         _lastSyncResult.value = null
 
         try {
@@ -3386,6 +3410,7 @@ class SyncManager internal constructor(
             logger.log("강제 서버 동기화 종료", folder.accountEmail)
             _isSyncing.value = false
             _syncProgress.value = null
+            endOperation(SyncOperationType.FORCE_PULL)
         }
     }
 

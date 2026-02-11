@@ -52,6 +52,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import uk.xmlangel.googledrivesync.data.local.SyncDatabase
 import uk.xmlangel.googledrivesync.sync.SyncManager
+import uk.xmlangel.googledrivesync.sync.SyncManager.SyncOperationType
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -71,7 +72,10 @@ fun SyncVerificationReportScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var loading by remember { mutableStateOf(true) }
     var runningVerification by remember { mutableStateOf(false) }
-    var runningForcePull by remember { mutableStateOf(false) }
+    val isSyncing by syncManager.isSyncing.collectAsState()
+    val currentOperation by syncManager.currentOperation.collectAsState()
+    val operationStartedAtMs by syncManager.operationStartedAtMs.collectAsState()
+    val runningForcePull = isSyncing && currentOperation == SyncOperationType.FORCE_PULL
     var showForcePullDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var reportContent by remember { mutableStateOf<String?>(null) }
@@ -86,7 +90,6 @@ fun SyncVerificationReportScreen(
     var loadingForcePullPreview by remember { mutableStateOf(false) }
     var forcePullPreviewError by remember { mutableStateOf<String?>(null) }
     var showLeaveWhileForcePullDialog by remember { mutableStateOf(false) }
-    var forcePullStartedAt by remember { mutableStateOf<Long?>(null) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     val syncProgress by syncManager.syncProgress.collectAsState()
 
@@ -100,14 +103,6 @@ fun SyncVerificationReportScreen(
 
     BackHandler {
         requestNavigateBack()
-    }
-
-    LaunchedEffect(runningForcePull) {
-        if (runningForcePull && forcePullStartedAt == null) {
-            forcePullStartedAt = System.currentTimeMillis()
-        } else if (!runningForcePull) {
-            forcePullStartedAt = null
-        }
     }
 
     LaunchedEffect(runningForcePull) {
@@ -289,7 +284,7 @@ fun SyncVerificationReportScreen(
                                 } else {
                                     0f
                                 }
-                                val elapsedMs = forcePullStartedAt?.let { nowMs - it } ?: 0L
+                                val elapsedMs = operationStartedAtMs?.let { nowMs - it } ?: 0L
                                 LinearProgressIndicator(
                                     progress = { progressRatio },
                                     modifier = Modifier.fillMaxWidth()
@@ -418,7 +413,6 @@ fun SyncVerificationReportScreen(
                     onClick = {
                         showForcePullDialog = false
                         scope.launch {
-                            runningForcePull = true
                             try {
                                 val execution = syncManager.forcePullFromServer(folderId)
                                 lastForcePullSummary = execution.summary
@@ -426,8 +420,6 @@ fun SyncVerificationReportScreen(
                                 reloadKey++
                             } catch (e: Exception) {
                                 snackbarHostState.showSnackbar("강제 서버 동기화 실패: ${e.message ?: e.javaClass.simpleName}")
-                            } finally {
-                                runningForcePull = false
                             }
                         }
                     },

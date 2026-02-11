@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.xmlangel.googledrivesync.R
 import uk.xmlangel.googledrivesync.data.local.SyncDatabase
@@ -31,6 +32,7 @@ import uk.xmlangel.googledrivesync.sync.SyncWorker
 import uk.xmlangel.googledrivesync.util.AppVersionUtil
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,16 +55,20 @@ fun DashboardScreen(
         .collectAsState(initial = emptyList())
     
     val isSyncing by syncManager.isSyncing.collectAsState()
+    val operationStartedAtMs by syncManager.operationStartedAtMs.collectAsState()
     val syncProgress by syncManager.syncProgress.collectAsState()
     val lastSyncResult by syncManager.lastSyncResult.collectAsState()
     val pendingConflicts by syncManager.pendingConflicts.collectAsState()
     val pendingUploads by syncManager.pendingUploads.collectAsState()
+    val skippedUploads by syncManager.skippedUploads.collectAsState()
     
     var showConflictDialog by remember { mutableStateOf(false) }
     var currentConflict by remember { mutableStateOf<SyncConflict?>(null) }
     
     var showUploadDialog by remember { mutableStateOf(false) }
+    var showSkippedDialog by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     
     // Intercept back button to move app to background
     BackHandler {
@@ -76,6 +82,9 @@ fun DashboardScreen(
         lastSyncResult?.let { result ->
             if (result is SyncResult.Success) {
                 snackbarHostState.showSnackbar("동기화 완료: ${result.uploaded}개 업로드, ${result.downloaded}개 다운로드")
+                result.warningMessage?.let { warning ->
+                    snackbarHostState.showSnackbar("경고: $warning")
+                }
                 syncManager.dismissLastResult()
             } else if (result is SyncResult.Error) {
                 snackbarHostState.showSnackbar("오류: ${result.message}")
@@ -91,9 +100,16 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(pendingUploads) {
+    LaunchedEffect(pendingUploads, isSyncing) {
         if (pendingUploads.isNotEmpty() && !isSyncing) {
             showUploadDialog = true
+        }
+    }
+
+    LaunchedEffect(isSyncing) {
+        while (isSyncing) {
+            nowMs = System.currentTimeMillis()
+            delay(1000)
         }
     }
     
@@ -136,6 +152,12 @@ fun DashboardScreen(
                             modifier = Modifier.size(40.dp)
                         ) {
                             Icon(Icons.Default.Settings, "설정")
+                        }
+                        IconButton(
+                            onClick = { showSkippedDialog = true },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(Icons.Default.Upload, "건너뛴 업로드 목록")
                         }
                         IconButton(
                             onClick = onNavigateToLogs,
@@ -198,7 +220,22 @@ fun DashboardScreen(
         ) {
             // Sync Progress
             val currentProgress = syncProgress
-            if (isSyncing && currentProgress != null) {
+            if (isSyncing) {
+                val progressPercent = if (currentProgress != null && currentProgress.totalFiles > 0) {
+                    ((currentProgress.currentIndex.toFloat() / currentProgress.totalFiles.toFloat()) * 100f)
+                        .coerceIn(0f, 100f)
+                        .roundToInt()
+                } else {
+                    null
+                }
+                val elapsedMs = operationStartedAtMs?.let { nowMs - it } ?: 0L
+                val operationLabel = when {
+                    currentProgress == null -> "초기화"
+                    currentProgress.statusMessage?.contains("검증", ignoreCase = false) == true -> "검증 단계"
+                    currentProgress.isUploading -> "업로드 처리"
+                    else -> "다운로드 처리"
+                }
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -210,16 +247,27 @@ fun DashboardScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "동기화 중...",
+                            text = "동기화 진행 상태",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = currentProgress.currentFile,
+                            text = "작업: $operationLabel",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "경과 시간: ${formatElapsedTime(elapsedMs)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = currentProgress?.currentFile ?: "동기화 준비 중...",
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        currentProgress.statusMessage?.let { status ->
+                        (currentProgress?.statusMessage ?: "드라이브 목록/로컬 스캔을 준비하는 중입니다.").let { status ->
                             Text(
                                 text = status,
                                 style = MaterialTheme.typography.labelSmall,
@@ -229,14 +277,19 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         LinearProgressIndicator(
                             progress = { 
-                                if (currentProgress.totalFiles > 0) {
+                                if (currentProgress != null && currentProgress.totalFiles > 0) {
                                     currentProgress.currentIndex.toFloat() / currentProgress.totalFiles 
                                 } else 0f
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
-                            text = "${currentProgress.currentIndex} / ${currentProgress.totalFiles}",
+                            text = if (currentProgress != null) {
+                                val percentText = progressPercent?.let { "$it% • " } ?: ""
+                                "${percentText}${currentProgress.currentIndex} / ${currentProgress.totalFiles}"
+                            } else {
+                                "진행률 계산 중..."
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -289,7 +342,10 @@ fun DashboardScreen(
                             },
                             onDelete = {
                                 scope.launch {
-                                    database.syncFolderDao().deleteSyncFolder(folder)
+                                    val stoppedActiveSync = syncManager.deleteSyncFolder(folder)
+                                    if (stoppedActiveSync) {
+                                        snackbarHostState.showSnackbar("동기화 중 폴더 삭제가 감지되어 동기화를 중지했습니다.")
+                                    }
                                 }
                             },
                             onClick = {
@@ -325,18 +381,40 @@ fun DashboardScreen(
                     syncManager.resolvePendingUpload(pendingUpload, resolution)
                 }
             },
-            onResolveAll = { resolution ->
+            onResolveSelected = { selectedUploads, resolution ->
                 scope.launch {
-                    val currentUploads = pendingUploads.toList()
-                    currentUploads.forEach { upload ->
+                    val targets = selectedUploads.toList()
+                    targets.forEach { upload ->
                         syncManager.resolvePendingUpload(upload, resolution)
                     }
-                    showUploadDialog = false
+                    if (syncManager.pendingUploads.value.isEmpty()) {
+                        showUploadDialog = false
+                    }
                 }
             },
             onDismiss = { 
                 showUploadDialog = false
                 syncManager.dismissPendingUploads()
+            }
+        )
+    }
+
+    if (showSkippedDialog) {
+        SkippedUploadsDialog(
+            skippedUploads = skippedUploads,
+            onRestoreSelected = { selected ->
+                val restored = syncManager.restoreSkippedUploadsToPending(selected)
+                scope.launch {
+                    snackbarHostState.showSnackbar("복원: ${restored}건 업로드 대기로 이동")
+                }
+                if (syncManager.skippedUploads.value.isEmpty()) {
+                    showSkippedDialog = false
+                }
+            },
+            onDismiss = { showSkippedDialog = false },
+            onClearAll = {
+                syncManager.dismissSkippedUploads()
+                showSkippedDialog = false
             }
         )
     }
@@ -599,9 +677,17 @@ fun ConflictDialog(
 fun UploadConfirmationDialog(
     pendingUploads: List<uk.xmlangel.googledrivesync.sync.PendingUpload>,
     onResolve: (uk.xmlangel.googledrivesync.sync.PendingUpload, uk.xmlangel.googledrivesync.sync.PendingUploadResolution) -> Unit,
-    onResolveAll: (uk.xmlangel.googledrivesync.sync.PendingUploadResolution) -> Unit,
+    onResolveSelected: (List<uk.xmlangel.googledrivesync.sync.PendingUpload>, uk.xmlangel.googledrivesync.sync.PendingUploadResolution) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val uploadKey: (uk.xmlangel.googledrivesync.sync.PendingUpload) -> String = { upload ->
+        "${upload.folderId}|${upload.localFile.absolutePath}|${upload.isNewFile}|${upload.driveFolderId}|${upload.driveFileId ?: "null"}"
+    }
+    var selectedKeys by remember(pendingUploads) {
+        mutableStateOf(pendingUploads.map(uploadKey).toSet())
+    }
+    val selectedUploads = pendingUploads.filter { selectedKeys.contains(uploadKey(it)) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -621,6 +707,26 @@ fun UploadConfirmationDialog(
                     "다음 파일들을 Google Drive에 업로드하시겠습니까?",
                     style = MaterialTheme.typography.bodyMedium
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "선택 ${selectedUploads.size}/${pendingUploads.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row {
+                        TextButton(onClick = {
+                            selectedKeys = pendingUploads.map(uploadKey).toSet()
+                        }) { Text("전체 선택") }
+                        TextButton(onClick = {
+                            selectedKeys = emptySet()
+                        }) { Text("선택 해제") }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "주의: 드라이브에 이미 동일한 이름의 파일이 있는 경우 중복 파일이 생성될 수 있습니다.",
@@ -647,11 +753,27 @@ fun UploadConfirmationDialog(
                                     .padding(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val key = uploadKey(upload)
+                                Checkbox(
+                                    checked = selectedKeys.contains(key),
+                                    onCheckedChange = { checked ->
+                                        selectedKeys = if (checked) {
+                                            selectedKeys + key
+                                        } else {
+                                            selectedKeys - key
+                                        }
+                                    }
+                                )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = upload.localFile.name,
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = upload.localFile.absolutePath,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
                                         text = if (upload.isNewFile) "새 파일" else "수정됨",
@@ -672,14 +794,122 @@ fun UploadConfirmationDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onResolveAll(uk.xmlangel.googledrivesync.sync.PendingUploadResolution.UPLOAD) }) {
-                Text("모두 업로드")
+            Row {
+                TextButton(
+                    enabled = selectedUploads.isNotEmpty(),
+                    onClick = { onResolveSelected(selectedUploads, uk.xmlangel.googledrivesync.sync.PendingUploadResolution.UPLOAD) }
+                ) {
+                    Text("선택 업로드(${selectedUploads.size})")
+                }
+                TextButton(
+                    enabled = selectedUploads.isNotEmpty(),
+                    onClick = { onResolveSelected(selectedUploads, uk.xmlangel.googledrivesync.sync.PendingUploadResolution.SKIP) }
+                ) {
+                    Text("선택 건너뛰기(${selectedUploads.size})")
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = { onResolveAll(uk.xmlangel.googledrivesync.sync.PendingUploadResolution.SKIP) }) {
-                Text("모두 건너뛰기")
+            TextButton(onClick = onDismiss) {
+                Text("닫기")
             }
+        }
+    )
+}
+
+@Composable
+fun SkippedUploadsDialog(
+    skippedUploads: List<uk.xmlangel.googledrivesync.sync.PendingUpload>,
+    onRestoreSelected: (List<uk.xmlangel.googledrivesync.sync.PendingUpload>) -> Unit,
+    onDismiss: () -> Unit,
+    onClearAll: () -> Unit
+) {
+    val uploadKey: (uk.xmlangel.googledrivesync.sync.PendingUpload) -> String = { upload ->
+        "${upload.folderId}|${upload.localFile.absolutePath}|${upload.isNewFile}|${upload.driveFolderId}|${upload.driveFileId ?: "null"}"
+    }
+    var selectedKeys by remember(skippedUploads) { mutableStateOf(emptySet<String>()) }
+    val selectedUploads = skippedUploads.filter { selectedKeys.contains(uploadKey(it)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("건너뛴 업로드 목록")
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text("나중에 다시 업로드할 파일 목록입니다.")
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("선택 ${selectedUploads.size}/${skippedUploads.size}")
+                    Row {
+                        TextButton(onClick = { selectedKeys = skippedUploads.map(uploadKey).toSet() }) { Text("전체 선택") }
+                        TextButton(onClick = { selectedKeys = emptySet() }) { Text("해제") }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(skippedUploads) { upload ->
+                        val key = uploadKey(upload)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selectedKeys.contains(key),
+                                    onCheckedChange = { checked ->
+                                        selectedKeys = if (checked) selectedKeys + key else selectedKeys - key
+                                    }
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(upload.localFile.name, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        upload.localFile.absolutePath,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        if (upload.isNewFile) "새 파일(건너뜀)" else "수정 파일(건너뜀)",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(
+                    enabled = selectedUploads.isNotEmpty(),
+                    onClick = { onRestoreSelected(selectedUploads) }
+                ) {
+                    Text("선택 복원(${selectedUploads.size})")
+                }
+                TextButton(
+                    enabled = skippedUploads.isNotEmpty(),
+                    onClick = onClearAll
+                ) {
+                    Text("전체 비우기")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("닫기") }
         }
     )
 }
@@ -696,4 +926,11 @@ private fun formatSize(bytes: Long): String {
         bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
         else -> "${bytes / (1024 * 1024 * 1024)} GB"
     }
+}
+
+private fun formatElapsedTime(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return if (minutes > 0) "${minutes}m ${seconds}s" else "${seconds}s"
 }

@@ -22,6 +22,13 @@ import java.io.OutputStream
  * Helper class for Google Drive API operations
  */
 class DriveServiceHelper(private val context: Context) {
+    data class DownloadResult(
+        val success: Boolean,
+        val skipped: Boolean = false,
+        val reason: String? = null,
+        val mimeType: String? = null,
+        val size: Long? = null
+    )
     
     private var driveService: Drive? = null
     
@@ -179,7 +186,8 @@ class DriveServiceHelper(private val context: Context) {
      */
     suspend fun findFile(name: String, parentId: String): DriveItem? = withContext(Dispatchers.IO) {
         try {
-            val query = "name = '$name' and '$parentId' in parents and trashed = false"
+            val escapedName = escapeDriveQueryValue(name)
+            val query = "name = '$escapedName' and '$parentId' in parents and trashed = false"
             val result = runWithRetry {
                 getDrive().files().list()
                     .setQ(query)
@@ -196,54 +204,109 @@ class DriveServiceHelper(private val context: Context) {
             null
         }
     }
+
+    /**
+     * Find a folder by name in a specific parent folder.
+     */
+    suspend fun findFolder(name: String, parentId: String): DriveItem? = withContext(Dispatchers.IO) {
+        try {
+            val escapedName = escapeDriveQueryValue(name)
+            val query = "name = '$escapedName' and '$parentId' in parents and trashed = false and mimeType = '$MIME_TYPE_FOLDER'"
+            val result = runWithRetry {
+                getDrive().files().list()
+                    .setQ(query)
+                    .setSpaces("drive")
+                    .setFields("files(id, name, mimeType, modifiedTime, size, parents, md5Checksum)")
+                    .setPageSize(1)
+                    .execute()
+            }
+
+            result.files?.firstOrNull()?.toDriveItem()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
     
     /**
      * Download a file
      */
-    suspend fun downloadFile(fileId: String, destinationPath: String): Boolean = 
-        withContext(Dispatchers.IO) {
-            // Get metadata first to check size and mimeType
-            val fileMetadata = runWithRetry {
-                getDrive().files().get(fileId)
-                    .setFields("id, name, mimeType, size")
-                    .execute()
-            }
-            
-            val mimeType = fileMetadata.mimeType
-            val size = fileMetadata.getSize() ?: 0L
-            
-            // 1. Handle 0-byte files (Fix for 416 error)
-            if (size == 0L && !isGoogleDoc(mimeType)) {
-                File(destinationPath).createNewFile()
-                return@withContext true
-            }
-            
-            val outputStream: OutputStream = FileOutputStream(destinationPath)
-            
-            // 2. Handle Non-Downloadable Google types (shortcuts, forms, etc.)
-            if (isNonDownloadable(mimeType)) {
-                // Log and skip instead of failing
-                // This prevents 400/403 errors for types that cannot be exported or downloaded
-                return@withContext true
-            }
+    suspend fun downloadFile(fileId: String, destinationPath: String): Boolean =
+        downloadFileDetailed(fileId, destinationPath).success
 
-            // 3. Handle Google Docs (Export)
-            if (isGoogleDoc(mimeType)) {
-                val exportMimeType = getExportMimeType(mimeType)
-                runWithRetry {
-                    getDrive().files().export(fileId, exportMimeType)
-                        .executeMediaAndDownloadTo(outputStream)
-                }
-            } else {
-                // 4. Normal binary file or unknown native type - try original format download
-                runWithRetry {
+    suspend fun downloadFileDetailed(fileId: String, destinationPath: String): DownloadResult =
+        withContext(Dispatchers.IO) {
+            try {
+                // Get metadata first to check size and mimeType
+                val fileMetadata = runWithRetry {
                     getDrive().files().get(fileId)
-                        .executeMediaAndDownloadTo(outputStream)
+                        .setFields("id, name, mimeType, size")
+                        .execute()
                 }
+
+                val mimeType = fileMetadata.mimeType
+                val size = fileMetadata.getSize() ?: 0L
+                val destinationFile = File(destinationPath)
+                destinationFile.parentFile?.mkdirs()
+
+                // Handle non-downloadable Google types (shortcuts/forms/sites/maps/folders)
+                if (isNonDownloadable(mimeType)) {
+                    return@withContext DownloadResult(
+                        success = false,
+                        skipped = true,
+                        reason = "non_downloadable_google_type",
+                        mimeType = mimeType,
+                        size = size
+                    )
+                }
+
+                // Handle 0-byte regular files
+                if (size == 0L && !isGoogleDoc(mimeType)) {
+                    return@withContext try {
+                        destinationFile.createNewFile()
+                        DownloadResult(success = true, mimeType = mimeType, size = size)
+                    } catch (e: Exception) {
+                        DownloadResult(
+                            success = false,
+                            reason = "create_file_failed:${e.javaClass.simpleName}:${e.message ?: "no_message"}",
+                            mimeType = mimeType,
+                            size = size
+                        )
+                    }
+                }
+
+                // Google Docs export or binary download
+                return@withContext try {
+                    FileOutputStream(destinationPath).use { outputStream ->
+                        if (isGoogleDoc(mimeType)) {
+                            val exportMimeType = getExportMimeType(mimeType)
+                            runWithRetry {
+                                getDrive().files().export(fileId, exportMimeType)
+                                    .executeMediaAndDownloadTo(outputStream)
+                            }
+                        } else {
+                            runWithRetry {
+                                getDrive().files().get(fileId)
+                                    .executeMediaAndDownloadTo(outputStream)
+                            }
+                        }
+                    }
+                    DownloadResult(success = true, mimeType = mimeType, size = size)
+                } catch (e: Exception) {
+                    DownloadResult(
+                        success = false,
+                        reason = "download_failed:${e.javaClass.simpleName}:${e.message ?: "no_message"}",
+                        mimeType = mimeType,
+                        size = size
+                    )
+                }
+            } catch (e: Exception) {
+                DownloadResult(
+                    success = false,
+                    reason = "metadata_failed:${e.javaClass.simpleName}:${e.message ?: "no_message"}"
+                )
             }
-            
-            outputStream.close()
-            true
         }
 
     private fun isGoogleDoc(mimeType: String?): Boolean {
@@ -436,6 +499,10 @@ class DriveServiceHelper(private val context: Context) {
             }
         }
         throw lastException ?: java.io.IOException("재시도 실패")
+    }
+
+    private fun escapeDriveQueryValue(value: String): String {
+        return value.replace("\\", "\\\\").replace("'", "\\'")
     }
     
     companion object {

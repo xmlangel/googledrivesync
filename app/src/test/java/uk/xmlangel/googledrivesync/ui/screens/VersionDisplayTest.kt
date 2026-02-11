@@ -103,6 +103,7 @@ class VersionDisplayTest {
             SyncSettingsScreen(
                 syncPreferences = syncPreferences,
                 onNavigateBack = {},
+                onNavigateToExclusions = {},
                 onScheduleSync = {}
             )
         }

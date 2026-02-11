@@ -1,17 +1,18 @@
 package uk.xmlangel.googledrivesync.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.FactCheck
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import uk.xmlangel.googledrivesync.data.local.SyncDatabase
 import uk.xmlangel.googledrivesync.data.local.SyncItemEntity
@@ -25,6 +26,7 @@ fun SyncedFolderFileScreen(
     database: SyncDatabase,
     folderId: String,
     folderName: String,
+    onNavigateToVerification: (folderId: String, folderName: String) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     val items by database.syncItemDao()
@@ -46,7 +48,12 @@ fun SyncedFolderFileScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, "뒤로")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { onNavigateToVerification(folderId, folderName) }) {
+                        Icon(Icons.AutoMirrored.Filled.FactCheck, "검증 리포트")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -64,7 +71,7 @@ fun SyncedFolderFileScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        Icons.Default.InsertDriveFile,
+                        Icons.AutoMirrored.Filled.InsertDriveFile,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = MaterialTheme.colorScheme.outline
@@ -116,10 +123,8 @@ fun SyncItemRow(item: SyncItemEntity) {
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.fileName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = item.localPath,
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -166,7 +171,7 @@ private fun getFileIcon(mimeType: String) = when {
     mimeType.contains("pdf") -> Icons.Default.PictureAsPdf
     mimeType.contains("document") || mimeType.contains("word") -> Icons.Default.Description
     mimeType.contains("spreadsheet") || mimeType.contains("excel") -> Icons.Default.TableChart
-    else -> Icons.Default.InsertDriveFile
+    else -> Icons.AutoMirrored.Filled.InsertDriveFile
 }
 
 private fun formatDate(timestamp: Long): String {

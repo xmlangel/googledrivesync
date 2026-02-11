@@ -3,7 +3,7 @@ package uk.xmlangel.googledrivesync.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
+import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import uk.xmlangel.googledrivesync.data.model.GoogleAccount
@@ -13,7 +13,9 @@ import uk.xmlangel.googledrivesync.data.model.GoogleAccount
  */
 class AccountPreferences(context: Context) {
     
-    private val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
     
     private val prefs: SharedPreferences = try {
         createEncryptedPrefs(context)
@@ -35,9 +37,9 @@ class AccountPreferences(context: Context) {
 
     private fun createEncryptedPrefs(context: Context): SharedPreferences {
         return EncryptedSharedPreferences.create(
-            "account_prefs",
-            masterKeyAlias,
             context,
+            "account_prefs",
+            masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )

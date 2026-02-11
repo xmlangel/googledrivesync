@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace 'uk.xmlangel.googledrivesync'
+    namespace = 'uk.xmlangel.googledrivesync'
     compileSdk {
         version = release(36)
     }
@@ -15,15 +15,15 @@ android {
         applicationId "uk.xmlangel.googledrivesync"
         minSdk 24
         targetSdk 36
-        versionCode 29
-        versionName "1.6.4"
+        versionCode 30
+        versionName "1.6.5"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         debug {
-            enableUnitTestCoverage true
+            enableUnitTestCoverage = true
         }
         release {
             minifyEnabled false
@@ -35,7 +35,7 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
     buildFeatures {
-        compose true
+        compose = true
     }
     packaging {
         resources {
@@ -226,4 +226,3 @@ tasks.register('patchJUnitXml') {
         }
     }
 }
-

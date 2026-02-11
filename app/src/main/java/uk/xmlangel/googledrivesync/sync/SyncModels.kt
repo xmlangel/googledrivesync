@@ -52,7 +52,8 @@ sealed class SyncResult {
     data class Success(
         val uploaded: Int,
         val downloaded: Int,
-        val skipped: Int
+        val skipped: Int,
+        val warningMessage: String? = null
     ) : SyncResult()
     
     data class Conflict(

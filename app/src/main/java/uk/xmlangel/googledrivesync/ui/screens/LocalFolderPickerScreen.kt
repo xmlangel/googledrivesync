@@ -20,13 +20,15 @@ import java.io.File
 fun LocalFolderPickerScreen(
     driveFolderId: String,
     driveFolderName: String,
-    onFolderSelected: (String) -> Unit,
+    isExistingDriveFolder: Boolean,
+    onFolderSelected: (localPath: String, clearLocalData: Boolean) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
     var currentPath by remember { mutableStateOf(rootPath) }
     var folders by remember { mutableStateOf<List<File>>(emptyList()) }
     var pathStack by remember { mutableStateOf(listOf<String>()) }
+    var showSelectionConfirmDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(currentPath) {
         val dir = File(currentPath)
@@ -68,7 +70,13 @@ fun LocalFolderPickerScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { onFolderSelected(currentPath) },
+                onClick = {
+                    if (isExistingDriveFolder) {
+                        showSelectionConfirmDialog = true
+                    } else {
+                        onFolderSelected(currentPath, false)
+                    }
+                },
                 icon = { Icon(Icons.Default.Check, "선택") },
                 text = { Text("이 폴더 선택") }
             )
@@ -174,4 +182,55 @@ fun LocalFolderPickerScreen(
             }
         }
     }
+
+    if (showSelectionConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showSelectionConfirmDialog = false },
+            title = { Text("로컬 데이터 처리 선택") },
+            text = {
+                Column {
+                    Text(
+                        "기존 Drive 폴더를 선택했습니다.\n" +
+                            "초기 정합성을 위해 로컬 폴더 데이터를 비우고 시작하는 것을 권장합니다."
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    AssistChip(
+                        onClick = { },
+                        enabled = false,
+                        label = { Text("권장: 삭제 후 연결") }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        "삭제하지 않으면 중복 파일 업로드/삭제가 발생할 수 있습니다.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSelectionConfirmDialog = false
+                        onFolderSelected(currentPath, true)
+                    }
+                ) {
+                    Text("삭제 후 연결 (권장)")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    onClick = {
+                        showSelectionConfirmDialog = false
+                        onFolderSelected(currentPath, false)
+                    }
+                ) {
+                    Text("삭제 안함")
+                }
+            }
+        )
+    }
+
 }

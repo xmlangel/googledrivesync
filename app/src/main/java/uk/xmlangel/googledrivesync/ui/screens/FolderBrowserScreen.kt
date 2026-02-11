@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import uk.xmlangel.googledrivesync.data.drive.DriveItem
 import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import java.text.SimpleDateFormat
@@ -22,15 +23,21 @@ import java.util.*
 @Composable
 fun FolderBrowserScreen(
     driveHelper: DriveServiceHelper,
-    onFolderSelected: (folderId: String, folderName: String) -> Unit,
+    onFolderSelected: (folderId: String, folderName: String, isExistingFolder: Boolean) -> Unit,
     onNavigateBack: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     var currentFolderId by remember { mutableStateOf<String?>(null) }
     var currentFolderName by remember { mutableStateOf("내 드라이브") }
     var items by remember { mutableStateOf<List<DriveItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var folderStack by remember { mutableStateOf(listOf<Pair<String?, String>>()) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    var createError by remember { mutableStateOf<String?>(null) }
+    var isCreatingFolder by remember { mutableStateOf(false) }
+    var newlyCreatedFolderIds by remember { mutableStateOf(setOf<String>()) }
     
     LaunchedEffect(currentFolderId) {
         isLoading = true
@@ -76,6 +83,17 @@ fun FolderBrowserScreen(
                         Icon(Icons.Default.ArrowBack, "뒤로")
                     }
                 },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            createError = null
+                            newFolderName = ""
+                            showCreateDialog = true
+                        }
+                    ) {
+                        Icon(Icons.Default.CreateNewFolder, "폴더 생성")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
@@ -84,7 +102,9 @@ fun FolderBrowserScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { 
-                    onFolderSelected(currentFolderId ?: "root", currentFolderName)
+                    val selectedId = currentFolderId ?: "root"
+                    val isExistingFolder = selectedId == "root" || !newlyCreatedFolderIds.contains(selectedId)
+                    onFolderSelected(selectedId, currentFolderName, isExistingFolder)
                 },
                 icon = { Icon(Icons.Default.Check, "선택") },
                 text = { Text("이 폴더 선택") }
@@ -163,6 +183,76 @@ fun FolderBrowserScreen(
                 }
             }
         }
+    }
+
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isCreatingFolder) showCreateDialog = false
+            },
+            title = { Text("새 폴더 생성") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { value ->
+                            newFolderName = value
+                            createError = null
+                        },
+                        label = { Text("폴더 이름") },
+                        singleLine = true
+                    )
+                    createError?.let { msg ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = msg,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isCreatingFolder && newFolderName.trim().isNotEmpty(),
+                    onClick = {
+                        val targetParentId = currentFolderId ?: "root"
+                        val parentFolderId = if (targetParentId == "root") null else targetParentId
+                        val createdName = newFolderName.trim()
+                        scope.launch {
+                            isCreatingFolder = true
+                            createError = null
+                            try {
+                                val created = driveHelper.createFolder(createdName, parentFolderId)
+                                if (created == null) {
+                                    createError = "폴더 생성에 실패했습니다."
+                                } else {
+                                    newlyCreatedFolderIds = newlyCreatedFolderIds + created.id
+                                    showCreateDialog = false
+                                    folderStack = folderStack + (currentFolderId to currentFolderName)
+                                    currentFolderId = created.id
+                                    currentFolderName = created.name
+                                }
+                            } catch (e: Exception) {
+                                createError = e.message ?: "폴더 생성 중 오류가 발생했습니다."
+                            } finally {
+                                isCreatingFolder = false
+                            }
+                        }
+                    }
+                ) {
+                    Text(if (isCreatingFolder) "생성 중..." else "생성")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isCreatingFolder,
+                    onClick = { showCreateDialog = false }
+                ) {
+                    Text("취소")
+                }
+            }
+        )
     }
 }
 

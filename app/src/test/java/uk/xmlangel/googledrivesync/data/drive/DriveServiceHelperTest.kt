@@ -10,6 +10,7 @@ import org.junit.Test
 import com.google.api.services.drive.Drive
 import android.util.Log
 import com.google.api.services.drive.model.File as DriveFile
+import com.google.api.services.drive.model.FileList
 import java.io.File
 import java.io.OutputStream
 
@@ -29,6 +30,9 @@ class DriveServiceHelperTest {
 
     @MockK
     lateinit var mockExport: Drive.Files.Export
+
+    @MockK
+    lateinit var mockList: Drive.Files.List
 
     private lateinit var driveServiceHelper: DriveServiceHelper
 
@@ -201,5 +205,37 @@ class DriveServiceHelperTest {
             // Should have called execute 5 times
             verify(exactly = 5) { mockGet.execute() }
         }
+    }
+
+    @Test
+    fun `findFile escapes single quote and backslash in query`() = runBlocking {
+        val fileName = "O'Reilly\\notes.txt"
+        val parentId = "parent-id"
+
+        every { mockFiles.list() } returns mockList
+        every { mockList.setQ(any()) } returns mockList
+        every { mockList.setSpaces(any()) } returns mockList
+        every { mockList.setFields(any()) } returns mockList
+        every { mockList.setPageSize(any()) } returns mockList
+        every { mockList.execute() } returns FileList().apply {
+            files = listOf(
+                DriveFile().apply {
+                    id = "file-id"
+                    name = fileName
+                    mimeType = "text/plain"
+                    setSize(1L)
+                    parents = listOf(parentId)
+                }
+            )
+        }
+
+        val querySlot = slot<String>()
+        every { mockList.setQ(capture(querySlot)) } returns mockList
+
+        val result = driveServiceHelper.findFile(fileName, parentId)
+
+        assertNotNull(result)
+        assertEquals("file-id", result?.id)
+        assertTrue(querySlot.captured.contains("O\\'Reilly\\\\notes.txt"))
     }
 }

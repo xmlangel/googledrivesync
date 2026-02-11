@@ -15,6 +15,9 @@ interface SyncFolderDao {
 
     @Query("SELECT * FROM sync_folders WHERE isEnabled = 1")
     suspend fun getEnabledSyncFoldersOnce(): List<SyncFolderEntity>
+
+    @Query("SELECT * FROM sync_folders")
+    suspend fun getAllSyncFoldersOnce(): List<SyncFolderEntity>
     
     @Query("SELECT * FROM sync_folders WHERE id = :id")
     suspend fun getSyncFolderById(id: String): SyncFolderEntity?
@@ -52,6 +55,9 @@ interface SyncItemDao {
     
     @Query("SELECT * FROM sync_items WHERE syncFolderId = :folderId")
     fun getSyncItemsByFolder(folderId: String): Flow<List<SyncItemEntity>>
+
+    @Query("SELECT * FROM sync_items")
+    suspend fun getAllSyncItems(): List<SyncItemEntity>
     
     @Query("SELECT * FROM sync_items WHERE status = :status")
     suspend fun getSyncItemsByStatus(status: SyncStatus): List<SyncItemEntity>
@@ -133,4 +139,10 @@ interface DirtyLocalDao {
 
     @Query("DELETE FROM dirty_local_items WHERE syncFolderId = :folderId")
     suspend fun deleteDirtyItemsByFolder(folderId: String)
+
+    @Query("DELETE FROM dirty_local_items WHERE syncFolderId = :folderId AND detectedAt <= :detectedAt")
+    suspend fun deleteDirtyItemsByFolderBefore(folderId: String, detectedAt: Long)
+
+    @Query("SELECT COUNT(*) FROM dirty_local_items WHERE syncFolderId = :folderId AND detectedAt > :detectedAt")
+    suspend fun countDirtyItemsByFolderAfter(folderId: String, detectedAt: Long): Int
 }

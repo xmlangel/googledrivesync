@@ -14,6 +14,7 @@ import org.robolectric.annotation.Config
 import uk.xmlangel.googledrivesync.data.drive.DriveItem
 import uk.xmlangel.googledrivesync.data.drive.DriveServiceHelper
 import uk.xmlangel.googledrivesync.data.local.*
+import uk.xmlangel.googledrivesync.data.model.SyncDirection
 import uk.xmlangel.googledrivesync.data.model.SyncStatus
 import uk.xmlangel.googledrivesync.util.SyncLogger
 import java.io.File
@@ -69,6 +70,10 @@ class SyncMoveDetectionTest {
             syncPreferences = mockSyncPreferences,
             logger = mockLogger
         )
+
+        every { mockSyncPreferences.defaultSyncDirection } returns SyncDirection.BIDIRECTIONAL
+        every { mockSyncPreferences.defaultConflictResolution } returns null
+        every { mockSyncPreferences.autoUploadEnabled } returns true
     }
 
     @Test
@@ -79,11 +84,15 @@ class SyncMoveDetectionTest {
         val folderBId = "folder-b-id"
         val driveFileId = "drive-file-id"
         
-        val folderA = SyncFolderEntity(folderAId, "acc", "test@test.com", File(context.cacheDir, "A").also { it.mkdir() }.absolutePath, "drive-a", "Drive A")
+        val folderAPath = File(context.cacheDir, "A")
+        folderAPath.deleteRecursively()
+        folderAPath.mkdirs()
+        val folderA = SyncFolderEntity(folderAId, "acc", "test@test.com", folderAPath.absolutePath, "drive-a", "Drive A")
         
         // 1. File originally in Folder A
         val oldLocalPath = File(folderA.localPath, "test.txt").absolutePath
-        File(oldLocalPath).writeText("content")
+        val oldLocalFile = File(oldLocalPath)
+        oldLocalFile.writeText("content")
         
         val existingItem = SyncItemEntity(
             id = "item-id",
@@ -94,7 +103,7 @@ class SyncMoveDetectionTest {
             driveFileId = driveFileId,
             fileName = "test.txt",
             mimeType = "text/plain",
-            localModifiedAt = 1000L,
+            localModifiedAt = oldLocalFile.lastModified(),
             driveModifiedAt = 1000L,
             localSize = 7L,
             driveSize = 7L,
@@ -102,7 +111,10 @@ class SyncMoveDetectionTest {
         )
 
         // 2. Syncing Folder B where the file is now located on Drive
-        val folderBPath = File(context.cacheDir, "B").also { it.mkdir() }.absolutePath
+        val folderBDir = File(context.cacheDir, "B")
+        folderBDir.deleteRecursively()
+        folderBDir.mkdirs()
+        val folderBPath = folderBDir.absolutePath
         val driveItemInB = DriveItem(driveFileId, "test.txt", "text/plain", 1000L, 7L, "md5hash", listOf("drive-b"), false)
         
         coEvery { mockSyncItemDao.getSyncItemByLocalPath(any()) } returns null
@@ -117,7 +129,7 @@ class SyncMoveDetectionTest {
         // Call internal recursive sync method via reflection or just call syncFolder if we mock enough
         coEvery { mockSyncFolderDao.getSyncFolderById(folderBId) } returns SyncFolderEntity(folderBId, "acc", "test@test.com", folderBPath, "drive-b", "Drive B")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
-        coEvery { mockDriveHelper.listAllFiles("drive-b") } returns driveItems
+        coEvery { mockDriveHelper.listAllFiles("drive-b", any()) } returns driveItems
         coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
         coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
         coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
@@ -132,7 +144,9 @@ class SyncMoveDetectionTest {
         // Verify DB update
         coVerify { 
             mockSyncItemDao.updateSyncItem(match { 
-                it.driveFileId == driveFileId && it.localPath == newLocalPath.absolutePath 
+                it.driveFileId == driveFileId &&
+                    it.localPath == newLocalPath.absolutePath &&
+                    it.syncFolderId == folderBId
             }) 
         }
     }
@@ -178,7 +192,7 @@ class SyncMoveDetectionTest {
         coEvery { mockSyncFolderDao.getSyncFolderById(folderAId) } returns folderA
         coEvery { mockSyncFolderDao.getSyncFolderByDriveId("drive-b") } returns SyncFolderEntity("folder-b-id", "acc", "test@test.com", "/path/to/B", "drive-b", "Drive B")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
-        coEvery { mockDriveHelper.listAllFiles("drive-a") } returns driveItems
+        coEvery { mockDriveHelper.listAllFiles("drive-a", any()) } returns driveItems
         coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
         coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
         coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
@@ -203,7 +217,7 @@ class SyncMoveDetectionTest {
         
         coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns SyncFolderEntity(folderId, "acc", "test@test.com", folderPath, "drive-folder", "Drive")
         every { mockDriveHelper.initializeDriveService(any()) } returns true
-        coEvery { mockDriveHelper.listAllFiles("drive-folder") } returns driveItems
+        coEvery { mockDriveHelper.listAllFiles("drive-folder", any()) } returns driveItems
         coEvery { mockSyncItemDao.getSyncItemByLocalPath(localFile.absolutePath) } returns null
         coEvery { mockSyncItemDao.getSyncItemByDriveId("drive-id") } returns null
         coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
@@ -225,7 +239,7 @@ class SyncMoveDetectionTest {
         val matchingDriveItems = listOf(
             DriveItem("drive-id", "test.txt", "text/plain", 1000L, localFile.length(), localMd5, listOf("drive-folder"), false)
         )
-        coEvery { mockDriveHelper.listAllFiles("drive-folder") } returns matchingDriveItems
+        coEvery { mockDriveHelper.listAllFiles("drive-folder", any()) } returns matchingDriveItems
         coEvery { mockSyncItemDao.insertSyncItem(any()) } just Runs
         
         syncManager.syncFolder(folderId)

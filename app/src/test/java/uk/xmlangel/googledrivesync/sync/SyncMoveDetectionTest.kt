@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import io.mockk.*
 import io.mockk.impl.annotations.MockK
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -74,6 +75,26 @@ class SyncMoveDetectionTest {
         every { mockSyncPreferences.defaultSyncDirection } returns SyncDirection.BIDIRECTIONAL
         every { mockSyncPreferences.defaultConflictResolution } returns null
         every { mockSyncPreferences.autoUploadEnabled } returns true
+        every { mockSyncPreferences.userExcludedPaths } returns emptySet()
+        coEvery { mockSyncItemDao.getSyncItemsByFolder(any()) } returns flowOf(
+            listOf(
+                SyncItemEntity(
+                    id = "tracked-item",
+                    syncFolderId = "tracked-folder",
+                    accountId = "acc",
+                    accountEmail = "test@test.com",
+                    localPath = File(context.cacheDir, "tracked.txt").absolutePath,
+                    driveFileId = "tracked-drive-id",
+                    fileName = "tracked.txt",
+                    mimeType = "text/plain",
+                    localModifiedAt = 1L,
+                    driveModifiedAt = 1L,
+                    localSize = 1L,
+                    driveSize = 1L,
+                    status = SyncStatus.SYNCED
+                )
+            )
+        )
     }
 
     @Test

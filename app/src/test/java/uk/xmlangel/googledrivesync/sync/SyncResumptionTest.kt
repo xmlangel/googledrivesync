@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.*
 import io.mockk.impl.annotations.MockK
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
@@ -45,6 +46,30 @@ class SyncResumptionTest {
             syncPreferences = preferences,
             logger = logger
         )
+
+        every { preferences.defaultSyncDirection } returns uk.xmlangel.googledrivesync.data.model.SyncDirection.BIDIRECTIONAL
+        every { preferences.defaultConflictResolution } returns ConflictResolution.USE_LOCAL
+        every { preferences.autoUploadEnabled } returns true
+        every { preferences.userExcludedPaths } returns emptySet()
+        coEvery { syncItemDao.getSyncItemsByFolder(any()) } returns flowOf(
+            listOf(
+                SyncItemEntity(
+                    id = "tracked-item",
+                    syncFolderId = "tracked-folder",
+                    accountId = "acc_1",
+                    accountEmail = "test@example.com",
+                    localPath = File(context.cacheDir, "tracked.txt").absolutePath,
+                    driveFileId = "tracked-drive-id",
+                    fileName = "tracked.txt",
+                    mimeType = "text/plain",
+                    localModifiedAt = 1L,
+                    driveModifiedAt = 1L,
+                    localSize = 1L,
+                    driveSize = 1L
+                )
+            )
+        )
+        coEvery { dirtyLocalDao.countDirtyItemsByFolderAfter(any(), any()) } returns 0
     }
 
     @Test
@@ -54,7 +79,7 @@ class SyncResumptionTest {
                 id = "1",
                 accountId = "acc_1",
                 accountEmail = "test@example.com",
-                localPath = "/tmp/test",
+                localPath = File(context.cacheDir, "sync-resume-test-1").apply { mkdirs() }.absolutePath,
                 driveFolderId = "drive_id",
                 driveFolderName = "Test",
                 lastStartPageToken = "token1"
@@ -100,7 +125,7 @@ class SyncResumptionTest {
                 id = "1",
                 accountId = "acc_1",
                 accountEmail = "test@example.com",
-                localPath = "/tmp/test",
+                localPath = File(context.cacheDir, "sync-resume-test-2").apply { mkdirs() }.absolutePath,
                 driveFolderId = "drive_id",
                 driveFolderName = "Test",
                 lastSyncedAt = System.currentTimeMillis() - 7200000 // 2 hours ago

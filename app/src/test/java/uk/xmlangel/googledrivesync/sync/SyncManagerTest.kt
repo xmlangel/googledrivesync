@@ -280,6 +280,8 @@ class SyncManagerTest {
         
         // Verify state flows were updated
         assertEquals("Pending conflicts list should have 1 item", 1, syncManager.pendingConflicts.value.size)
+        coVerify(exactly = 0) { mockDriveHelper.updateFile(any(), any(), any()) }
+        coVerify(exactly = 0) { mockDriveHelper.downloadFile(any(), any()) }
         
         println("  Verified that null policy results in a Conflict result for user interaction.")
         localFile.delete()
@@ -660,7 +662,11 @@ class SyncManagerTest {
         newLocalFile.delete()
         
         // Verify DB was updated
-        coVerify { mockSyncItemDao.updateSyncItem(match { it.fileName == "new_name.txt" && it.localPath == newLocalFile.absolutePath }) }
+        coVerify { mockSyncItemDao.updateSyncItem(match {
+            it.fileName == "new_name.txt" &&
+                it.localPath == newLocalFile.absolutePath &&
+                it.syncFolderId == folderId
+        }) }
         println("  Verified that local file was renamed and DB updated when Drive name changed.")
     }
 
@@ -848,6 +854,60 @@ class SyncManagerTest {
         assertFalse("Local file should have been deleted because it is gone from Drive", localFile.exists())
         coVerify { mockSyncItemDao.deleteSyncItem(any()) }
         println("  Verified server-side deletion was handled correctly during full scan.")
+        }
+    }
+
+    @Test
+    fun testSyncFolderDeletesMovedDirectoryWhenTargetFolderNotSynced() {
+        runBlocking {
+            println("Testing deletion of moved directory when Drive parent is not a synced folder...")
+            val folderId = "test-folder-id"
+            val folder = SyncFolderEntity(folderId, "acc-id", "test@example.com", context.cacheDir.absolutePath, "drive-id", "Drive")
+
+            coEvery { mockSyncFolderDao.getSyncFolderById(folderId) } returns folder
+            every { mockDriveHelper.initializeDriveService(any()) } returns true
+            coEvery { mockHistoryDao.insertHistory(any()) } returns 1L
+            coEvery { mockHistoryDao.completeHistory(any(), any(), any(), any(), any(), any(), any()) } just Runs
+            coEvery { mockSyncFolderDao.updateLastSyncTime(any(), any()) } just Runs
+            coEvery { mockDriveHelper.listAllFiles(any(), any()) } returns emptyList()
+
+            val localDir = File(context.cacheDir, "moved_dir").also { it.mkdirs() }
+            File(localDir, "child.txt").writeText("nested")
+
+            val existingItem = SyncItemEntity(
+                id = "dir-item-id",
+                syncFolderId = folderId,
+                accountId = "acc-id",
+                accountEmail = "test@example.com",
+                localPath = localDir.absolutePath,
+                driveFileId = "drive-dir-id",
+                fileName = "moved_dir",
+                mimeType = DriveServiceHelper.MIME_TYPE_FOLDER,
+                localModifiedAt = localDir.lastModified(),
+                driveModifiedAt = localDir.lastModified(),
+                localSize = 0L,
+                driveSize = 0L,
+                status = SyncStatus.SYNCED
+            )
+            coEvery { mockSyncItemDao.getSyncItemByLocalPath(localDir.absolutePath) } returns existingItem
+
+            val movedMeta = DriveItem(
+                id = "drive-dir-id",
+                name = "moved_dir",
+                mimeType = DriveServiceHelper.MIME_TYPE_FOLDER,
+                modifiedTime = System.currentTimeMillis(),
+                size = 0L,
+                md5Checksum = null,
+                parentIds = listOf("unsynced-parent-id"),
+                isFolder = true
+            )
+            coEvery { mockDriveHelper.getFile("drive-dir-id") } returns movedMeta
+            coEvery { mockSyncFolderDao.getSyncFolderByDriveId("unsynced-parent-id") } returns null
+
+            syncManager.syncFolder(folderId)
+
+            assertFalse("Moved directory should be deleted recursively", localDir.exists())
+            coVerify { mockSyncItemDao.deleteSyncItem(existingItem) }
         }
     }
 
@@ -1598,4 +1658,3 @@ class SyncManagerTest {
         unmockkObject(uk.xmlangel.googledrivesync.util.FileUtils)
     }
 }
-

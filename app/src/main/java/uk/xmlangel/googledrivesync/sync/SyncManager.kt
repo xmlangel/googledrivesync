@@ -602,6 +602,7 @@ class SyncManager internal constructor(
                             handledLocalPaths.add(existingItem.localPath)
                             localFile = newLocalFile
                             existingItem = existingItem.copy(
+                                syncFolderId = folder.id,
                                 localPath = newLocalFile.absolutePath,
                                 fileName = sanitizedNewName
                             )
@@ -779,8 +780,11 @@ class SyncManager internal constructor(
                             skipped++
                         } else {
                             logger.log("이동 감지 (Drive): ${localFile.name} -> 비동기화 폴더로 이동됨. 로컬 삭제", folder.accountEmail)
-                            if (localFile.delete()) {
+                            val deleteResult = if (localFile.isDirectory) localFile.deleteRecursively() else localFile.delete()
+                            if (deleteResult || !localFile.exists()) {
                                 syncItemDao.deleteSyncItem(existingItem)
+                            } else {
+                                logger.log("[WARNING] 로컬 파일 삭제 실패: ${localFile.name}", folder.accountEmail)
                             }
                         }
                     }

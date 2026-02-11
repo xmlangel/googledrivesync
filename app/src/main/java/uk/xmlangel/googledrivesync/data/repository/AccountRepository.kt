@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package uk.xmlangel.googledrivesync.data.repository
 
 import android.content.Context

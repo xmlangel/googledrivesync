@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package uk.xmlangel.googledrivesync.ui.screens
 
 import android.app.Activity

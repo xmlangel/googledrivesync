@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace 'uk.xmlangel.googledrivesync'
+    namespace = 'uk.xmlangel.googledrivesync'
     compileSdk {
         version = release(36)
     }
@@ -23,7 +23,7 @@ android {
 
     buildTypes {
         debug {
-            enableUnitTestCoverage true
+            enableUnitTestCoverage = true
         }
         release {
             minifyEnabled false
@@ -35,7 +35,7 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
     buildFeatures {
-        compose true
+        compose = true
     }
     packaging {
         resources {
@@ -226,4 +226,3 @@ tasks.register('patchJUnitXml') {
         }
     }
 }
-

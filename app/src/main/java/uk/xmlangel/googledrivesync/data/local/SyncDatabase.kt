@@ -38,7 +38,7 @@ abstract class SyncDatabase : RoomDatabase() {
                     SyncDatabase::class.java,
                     "sync_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
                 instance

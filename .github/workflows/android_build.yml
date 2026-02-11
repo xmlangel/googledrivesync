@@ -35,6 +35,21 @@ jobs:
         TESTCASECRAFT_PROJECT_ID: ${{ secrets.TESTCASECRAFT_PROJECT_ID }}
         TESTCASECRAFT_SERVER_URL: ${{ secrets.TESTCASECRAFT_SERVER_URL }}
       run: |
+        if [ -z "$TESTCASECRAFT_SERVER_URL" ] || [ "$TESTCASECRAFT_SERVER_URL" = "null" ]; then
+          echo "TESTCASECRAFT_SERVER_URL not set, skipping upload."
+          exit 0
+        fi
+
+        if [ -z "$TESTCASECRAFT_SERVER_USERNAME" ] || [ -z "$TESTCASECRAFT_SERVER_PASSWORD" ] || [ -z "$TESTCASECRAFT_PROJECT_ID" ]; then
+          echo "TestCaseCraft credentials/project id not set, skipping upload."
+          exit 0
+        fi
+
+        if [ ! -d "app/build/test-results" ]; then
+          echo "No test result directory found, skipping upload."
+          exit 0
+        fi
+
         # Login to get JWT Token
         TOKEN=$(curl -s -X POST "$TESTCASECRAFT_SERVER_URL/api/auth/login" \
           -H "Content-Type: application/json" \
@@ -47,17 +62,13 @@ jobs:
 
         # Find and upload each XML file
         # Results are usually in app/build/test-results/testDebugUnitTest/
-        if [ -n "$TESTCASECRAFT_SERVER_URL" ] && [ "$TESTCASECRAFT_SERVER_URL" != "null" ]; then
-          find app/build/test-results -name "*.xml" | while read -r file; do
-            echo "Uploading $file..."
-            curl -X POST "$TESTCASECRAFT_SERVER_URL/api/junit-results/upload?projectId=${TESTCASECRAFT_PROJECT_ID}&executionName=GitHub_Action_$(date +%Y%m%d_%H%M%S)" \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: multipart/form-data" \
-              -F "file=@$file"
-          done
-        else
-          echo "TESTCASECRAFT_SERVER_URL not set, skipping upload."
-        fi
+        find app/build/test-results -name "*.xml" | while read -r file; do
+          echo "Uploading $file..."
+          curl -X POST "$TESTCASECRAFT_SERVER_URL/api/junit-results/upload?projectId=${TESTCASECRAFT_PROJECT_ID}&executionName=GitHub_Action_$(date +%Y%m%d_%H%M%S)" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: multipart/form-data" \
+            -F "file=@$file"
+        done
       continue-on-error: true
 
   build:

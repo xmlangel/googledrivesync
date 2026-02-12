@@ -15,7 +15,14 @@ object SyncExclusions {
         fun toStorageToken(): String = "${type.name.lowercase()}:$value"
     }
 
-    private val defaultRules = emptyList<Rule>()
+    private val defaultRules = listOf(
+        Rule(
+            SyncExclusionType.FILE,
+            ".obsidian/workspace.json",
+            "default",
+            "Obsidian workspace state (noisy)"
+        )
+    )
 
     fun defaults(): List<Rule> = defaultRules
 

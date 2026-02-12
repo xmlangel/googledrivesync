@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +59,9 @@ fun SyncExclusionsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val defaultRules = remember { SyncExclusions.defaults() }
+    val obsidianExcludeToken = remember {
+        SyncExclusions.buildUserRuleToken(SyncExclusionType.DIRECTORY, ".obsidian") ?: "directory:.obsidian"
+    }
     var userRules by remember { mutableStateOf(SyncExclusions.parseUserRules(syncPreferences.userExcludedPaths)) }
     var showAddDialog by remember { mutableStateOf(false) }
     var loadingCandidates by remember { mutableStateOf(false) }
@@ -65,6 +70,11 @@ fun SyncExclusionsScreen(
 
     fun refreshUserRules() {
         userRules = SyncExclusions.parseUserRules(syncPreferences.userExcludedPaths)
+    }
+
+    LaunchedEffect(Unit) {
+        syncPreferences.ensureObsidianExclusionDefault()
+        refreshUserRules()
     }
 
     Scaffold(
@@ -114,6 +124,32 @@ fun SyncExclusionsScreen(
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("기본 제외", fontWeight = FontWeight.Bold)
                     Text("시스템 기본 제외 항목은 제거할 수 없습니다.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
+            Card {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val obsidianExcluded = syncPreferences.userExcludedPaths.contains(obsidianExcludeToken)
+                    Checkbox(
+                        checked = obsidianExcluded,
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                syncPreferences.addUserExcludedRule(SyncExclusionType.DIRECTORY, ".obsidian")
+                            } else {
+                                syncPreferences.removeUserExcludedRule(obsidianExcludeToken)
+                            }
+                            refreshUserRules()
+                        }
+                    )
+                    Column {
+                        Text(".obsidian 제외", fontWeight = FontWeight.SemiBold)
+                        Text("기본 체크: 동기화 제외(업/다운로드 모두 안 함)", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
 
@@ -314,4 +350,3 @@ private fun extractDirectoryCandidates(filePaths: List<String>): List<String> {
     }
     return dirs.sorted()
 }
-

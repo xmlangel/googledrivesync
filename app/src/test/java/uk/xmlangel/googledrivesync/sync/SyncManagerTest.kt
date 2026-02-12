@@ -234,6 +234,36 @@ class SyncManagerTest {
     }
 
     @Test
+    fun `resolveConflict USE_DRIVE returns false and marks error when download fails`() = runBlocking {
+        val syncItem = SyncItemEntity(
+            id = "test-id",
+            syncFolderId = "folder-id",
+            accountId = "account-id",
+            accountEmail = "test@example.com",
+            localPath = "/tmp/test.txt",
+            driveFileId = "drive-id",
+            fileName = "test.txt",
+            mimeType = "text/plain",
+            localModifiedAt = 1000L,
+            driveModifiedAt = 1000L,
+            localSize = 100L,
+            driveSize = 100L,
+            status = SyncStatus.CONFLICT
+        )
+        val conflict = SyncConflict(syncItem, "test.txt", 1000L, 100L, "test.txt", 1000L, 100L)
+
+        coEvery { mockDriveHelper.downloadFile(any(), any()) } returns false
+        coEvery { mockSyncItemDao.updateItemError(any(), any(), any()) } just Runs
+
+        val result = syncManager.resolveConflict(conflict, ConflictResolution.USE_DRIVE)
+
+        assertFalse(result)
+        coVerify { mockDriveHelper.downloadFile("drive-id", "/tmp/test.txt") }
+        coVerify(exactly = 0) { mockSyncItemDao.updateItemStatus("test-id", SyncStatus.SYNCED) }
+        coVerify { mockSyncItemDao.updateItemError("test-id", SyncStatus.ERROR, match { it.contains("Drive download failed") }) }
+    }
+
+    @Test
     // Given: Preconditions for "resolveConflict KEEP_BOTH renames local and downloads drive version" are prepared.
     // And: Required mocks and test data are configured.
     // When: The target action is executed in this test.

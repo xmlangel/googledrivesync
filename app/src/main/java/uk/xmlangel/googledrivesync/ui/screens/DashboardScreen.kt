@@ -621,6 +621,10 @@ fun ConflictDialog(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+                Text(
+                    text = conflict.syncItem.localPath,
+                    style = MaterialTheme.typography.bodySmall
+                )
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 Card(

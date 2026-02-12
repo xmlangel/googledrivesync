@@ -44,3 +44,20 @@
 - Do not commit secrets or local credential files.
 - OAuth/Drive setup depends on package name `uk.xmlangel.googledrivesync` and SHA-1 registration.
 - Review `local.properties` and signing settings before sharing builds.
+
+## Release Workflow Conditions
+- Workflow file: `.github/workflows/android_build.yml`
+- `release` job runs only when `github.ref` starts with `refs/tags/v` (tag push like `v1.6.5`).
+- `pull_request` runs do not execute `release` job.
+- `release` job depends on successful completion of `test` and `build` jobs (`needs: build`).
+- `main` is not a technical requirement for triggering `release`; any branch/commit works if a `v*` tag is pushed.
+- For official production releases, tagging on `main` is still recommended.
+- Example (same as current flow, from release branch):
+  1. `git checkout release/v1.6.5`
+  2. `git tag v1.6.5`
+  3. `git push origin v1.6.5`
+  4. Confirm Actions event is `push` on `v1.6.5` and `release` job starts after `test`/`build`.
+- Example (official release on main):
+  1. Merge PR to `main`
+  2. `git checkout main && git pull`
+  3. `git tag v1.6.5 && git push origin v1.6.5`

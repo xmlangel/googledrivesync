@@ -47,6 +47,24 @@ git tag -a v1.1.0 -m "Release version 1.1.0"
 git push origin v1.1.0
 ```
 
+## GitHub Actions 릴리즈 실행 조건
+
+- 워크플로 파일: `.github/workflows/android_build.yml`
+- `release` job은 태그 ref(`refs/tags/v*`)에서만 실행됩니다.
+- `pull_request` 실행에서는 `release` job이 실행되지 않습니다.
+- `release` job은 `test`와 `build`가 성공해야 실행됩니다 (`test -> build -> release`).
+- `main` 브랜치는 **기술적으로 필수 조건이 아닙니다**. `v*` 태그만 push되면 실행됩니다.
+- 다만 공식 배포 릴리즈는 추적성과 안정성을 위해 `main` 기준 태깅을 권장합니다.
+- 예시 1 (현재와 같은 릴리즈 브랜치 태깅):
+  1. `git checkout release/v1.6.5`
+  2. `git tag v1.6.5`
+  3. `git push origin v1.6.5`
+  4. Actions에서 `event=push`, `ref=v1.6.5` 실행 확인
+- 예시 2 (공식 릴리즈 권장 플로우):
+  1. 릴리즈 PR을 `main`에 머지
+  2. `git checkout main && git pull`
+  3. `git tag v1.6.5 && git push origin v1.6.5`
+
 ## 완료 후 확인
 
 - `./gradlew assembleDebug` 명령을 실행하여 빌드가 정상적으로 완료되는지 확인합니다.

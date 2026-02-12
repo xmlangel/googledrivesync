@@ -518,6 +518,8 @@ class SyncManager internal constructor(
             var errors = 0
             val syncStartedAt = System.currentTimeMillis()
             val conflicts = mutableListOf<SyncConflict>()
+            var forceFullScanNextRun = false
+            var runImmediateRecoveryFullScan = false
             lastChangesDebugStats = null
             resetCurrentSyncDownloadDiagnostics()
             
@@ -725,11 +727,21 @@ class SyncManager internal constructor(
                         extraNotes = buildCurrentSyncDownloadDiagnosticsNotes()
                     )
                 )
-                val verifyMessage = "동기화 검증 결과: ${if (verification.isPass) "PASS" else "FAIL"} (리포트: ${verification.reportPath})"
-                if (verification.isPass) {
+                val verifyMessage = "동기화 검증 결과: ${verification.result} (리포트: ${verification.reportPath})"
+                if (verification.result == "PASS") {
                     logger.log(verifyMessage, folder.accountEmail)
+                } else if (verification.result == "WARN") {
+                    logger.log("[WARNING] $verifyMessage | ${verification.summary}", folder.accountEmail)
                 } else {
                     logger.log("[ERROR] $verifyMessage | ${verification.summary}", folder.accountEmail)
+                    if (verification.missingLocalFiles.isNotEmpty() || verification.missingLocalFolders.isNotEmpty()) {
+                        forceFullScanNextRun = true
+                        runImmediateRecoveryFullScan = true
+                        logger.log(
+                            "[WARNING] 검증에서 로컬 누락 항목이 발견되어 즉시 전체 스캔 재시도를 수행합니다.",
+                            folder.accountEmail
+                        )
+                    }
                     if (verification.extraLocalFiles.isNotEmpty()) {
                         val queued = enqueueExtraLocalFilesAsPendingUpload(folder, verification.extraLocalFiles)
                         logger.log(
@@ -754,6 +766,87 @@ class SyncManager internal constructor(
                 }
             }
 
+            if (runImmediateRecoveryFullScan) {
+                logger.log("검증 누락 보정: 동일 턴에서 전체 스캔 재실행", folder.accountEmail)
+
+                val localItems = try {
+                    scanLocalFolder(folder.localPath)
+                } catch (e: Exception) {
+                    logger.log("[ERROR] 보정 전체 스캔 로컬 폴더 스캔 실패: ${e.message}", folder.accountEmail)
+                    emptyList()
+                }
+
+                val driveItems = try {
+                    driveHelper.listAllFiles(folder.driveFolderId) { count ->
+                        publishSyncProgress(
+                            currentFile = "Google Drive",
+                            currentIndex = count.coerceAtLeast(0),
+                            totalFiles = (count + 1).coerceAtLeast(1),
+                            isUploading = false,
+                            statusMessage = "누락 보정 전체 스캔: 드라이브 목록 조회 중 ($count)..."
+                        )
+                    }
+                } catch (e: Exception) {
+                    if (isFatalNetworkError(e)) throw e
+                    val exceptionMsg = e.message ?: e.javaClass.simpleName
+                    logger.log("[ERROR] 보정 전체 스캔 드라이브 목록 획득 실패: $exceptionMsg", folder.accountEmail)
+                    errors++
+                    emptyList()
+                }
+
+                if (localItems.isNotEmpty() || driveItems.isNotEmpty()) {
+                    val recovery = syncDirectoryRecursive(
+                        folder = folder,
+                        localPath = folder.localPath,
+                        driveFolderId = folder.driveFolderId,
+                        localItems = localItems,
+                        driveItems = driveItems
+                    )
+                    uploaded += recovery.uploaded
+                    downloaded += recovery.downloaded
+                    skipped += recovery.skipped
+                    errors += recovery.errors
+                    conflicts.addAll(recovery.conflicts)
+                    if (recovery.pendingUploads.isNotEmpty()) {
+                        appendPendingUploadsDedup(recovery.pendingUploads)
+                    }
+                }
+
+                logInFlightDirtyCount(folder, folderId, syncStartedAt, "recovery_fullscan_before_cleanup")
+                dirtyLocalDao.deleteDirtyItemsByFolderBefore(folderId, syncStartedAt)
+
+                try {
+                    val postRecoveryVerification = generateAndSaveVerificationReport(
+                        folder = folder,
+                        diagnostics = SyncRunDiagnostics(
+                            isInitialSync = false,
+                            dirtyLocalItems = 0,
+                            trackedItems = trackedItemCount,
+                            changesProcessedSuccessfully = false,
+                            fullScanExecuted = true,
+                            fullScanReason = "verification_missing_retry",
+                            folderSyncDirection = folder.syncDirection,
+                            defaultSyncDirection = syncPreferences.defaultSyncDirection,
+                            autoUploadEnabled = syncPreferences.autoUploadEnabled,
+                            lastStartPageToken = folder.lastStartPageToken,
+                            changesDebugStats = lastChangesDebugStats,
+                            extraNotes = buildCurrentSyncDownloadDiagnosticsNotes()
+                        )
+                    )
+                    logger.log(
+                        "누락 보정 후 재검증: ${postRecoveryVerification.result} (${postRecoveryVerification.reportPath})",
+                        folder.accountEmail
+                    )
+                    if (postRecoveryVerification.isPass ||
+                        (postRecoveryVerification.missingLocalFiles.isEmpty() && postRecoveryVerification.missingLocalFolders.isEmpty())
+                    ) {
+                        forceFullScanNextRun = false
+                    }
+                } catch (e: Exception) {
+                    logger.log("[ERROR] 누락 보정 재검증 실패: ${e.message ?: e.javaClass.simpleName}", folder.accountEmail)
+                }
+            }
+
             // Update history
             historyDao.completeHistory(
                 id = historyId,
@@ -768,12 +861,18 @@ class SyncManager internal constructor(
             // Update folder last sync time
             syncFolderDao.updateLastSyncTime(folderId, System.currentTimeMillis())
             
-            // Phase 2: Get and save the new start page token after full sync
+            // Phase 2: Get and save the new start page token after sync.
+            // If verification indicates missing local entries, clear token so next run performs full scan.
             try {
-                val newToken = driveHelper.getStartPageToken()
-                if (newToken != null) {
-                    syncFolderDao.updatePageToken(folder.id, newToken)
-                    logger.log("새 Page Token 저장됨: $newToken", folder.accountEmail)
+                if (forceFullScanNextRun) {
+                    syncFolderDao.clearPageToken(folder.id)
+                    logger.log("다음 동기화를 위해 Page Token 초기화됨(강제 전체 스캔)", folder.accountEmail)
+                } else {
+                    val newToken = driveHelper.getStartPageToken()
+                    if (newToken != null) {
+                        syncFolderDao.updatePageToken(folder.id, newToken)
+                        logger.log("새 Page Token 저장됨: $newToken", folder.accountEmail)
+                    }
                 }
             } catch (e: Exception) {
                 logger.log("Page Token 획득 실패: ${e.message}", folder.accountEmail)
@@ -1026,20 +1125,26 @@ class SyncManager internal constructor(
             when (resolution) {
                 ConflictResolution.USE_LOCAL -> {
                     // Upload local file to Drive
-                    driveHelper.updateFile(
+                    val updated = driveHelper.updateFile(
                         fileId = conflict.syncItem.driveFileId!!,
                         localPath = conflict.syncItem.localPath
                     )
+                    if (updated == null) {
+                        throw IllegalStateException("Drive update returned null")
+                    }
                     syncItemDao.updateItemStatus(conflict.syncItem.id, SyncStatus.SYNCED)
                     true
                 }
                 
                 ConflictResolution.USE_DRIVE -> {
                     // Download from Drive
-                    driveHelper.downloadFile(
+                    val downloaded = driveHelper.downloadFile(
                         fileId = conflict.syncItem.driveFileId!!,
                         destinationPath = conflict.syncItem.localPath
                     )
+                    if (!downloaded) {
+                        throw IllegalStateException("Drive download failed")
+                    }
                     syncItemDao.updateItemStatus(conflict.syncItem.id, SyncStatus.SYNCED)
                     true
                 }
@@ -1049,12 +1154,18 @@ class SyncManager internal constructor(
                     val localFile = File(conflict.syncItem.localPath)
                     val newName = "${localFile.nameWithoutExtension}_local.${localFile.extension}"
                     val renamedPath = "${localFile.parent}/$newName"
-                    localFile.renameTo(File(renamedPath))
+                    val renamed = localFile.renameTo(File(renamedPath))
+                    if (!renamed) {
+                        throw IllegalStateException("Failed to rename local file for KEEP_BOTH")
+                    }
                     
-                    driveHelper.downloadFile(
+                    val downloaded = driveHelper.downloadFile(
                         fileId = conflict.syncItem.driveFileId!!,
                         destinationPath = conflict.syncItem.localPath
                     )
+                    if (!downloaded) {
+                        throw IllegalStateException("Drive download failed after KEEP_BOTH rename")
+                    }
                     syncItemDao.updateItemStatus(conflict.syncItem.id, SyncStatus.SYNCED)
                     true
                 }
@@ -1368,6 +1479,11 @@ class SyncManager internal constructor(
                 }
             } else if (localFile.isDirectory) {
                 // New Local Folder
+                if (isAlwaysDownloadPath(folder, localFile)) {
+                    logger.log("정책(.obsidian): 로컬 신규 폴더 업로드 건너뜀(다운로드 우선): ${localFile.absolutePath}", folder.accountEmail)
+                    skipped++
+                    continue
+                }
                 if (!isUploadBlocked(folder)) {
                     val statusMsg = "새 폴더 업로드: ${localFile.absolutePath}"
                     logger.log(statusMsg, folder.accountEmail)
@@ -1399,6 +1515,11 @@ class SyncManager internal constructor(
                 }
             } else {
                 // New Local File
+                if (isAlwaysDownloadPath(folder, localFile)) {
+                    logger.log("정책(.obsidian): 로컬 신규 파일 업로드 건너뜀(다운로드 우선): ${localFile.absolutePath}", folder.accountEmail)
+                    skipped++
+                    continue
+                }
                 if (!isUploadBlocked(folder)) {
                     if (syncPreferences.autoUploadEnabled) {
                         val statusMsg = "새 파일 업로드: ${localFile.absolutePath}"
@@ -1497,6 +1618,7 @@ class SyncManager internal constructor(
         var skipped = 0
         var errors = 0
         val conflicts = mutableListOf<SyncConflict>()
+        val alwaysDownload = isAlwaysDownloadPath(folder, localFile)
 
         val localModified = localFile.lastModified()
         val driveModified = driveFile.modifiedTime
@@ -1579,6 +1701,14 @@ class SyncManager internal constructor(
                         localFile.name, localModified, localFile.length(),
                         driveFile.name, driveModified, driveFile.size
                     )
+                    if (alwaysDownload) {
+                        if (downloadDriveVersion(folder, localFile, driveFile, existingItem)) {
+                            downloaded++
+                        } else {
+                            errors++
+                        }
+                        return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts)
+                    }
                     val defaultResolution = syncPreferences.defaultConflictResolution
                     if (defaultResolution != null) {
                         // Enforce sync direction policy for automatic conflict resolution.
@@ -1629,6 +1759,14 @@ class SyncManager internal constructor(
                             status = SyncStatus.SYNCED
                         )
                         return RecursiveSyncResult(0, 0, 1, 0, emptyList())
+                    }
+                    if (alwaysDownload) {
+                        if (downloadDriveVersion(folder, localFile, driveFile, existingItem)) {
+                            downloaded++
+                        } else {
+                            errors++
+                        }
+                        return RecursiveSyncResult(uploaded, downloaded, skipped, errors, conflicts)
                     }
                     if (!isUploadBlocked(folder)) {
                         if (syncPreferences.autoUploadEnabled) {
@@ -1701,7 +1839,7 @@ class SyncManager internal constructor(
                         )
                         return RecursiveSyncResult(0, 0, 1, 0, emptyList())
                     }
-                    if (!isDownloadBlocked(folder)) {
+                    if (alwaysDownload || !isDownloadBlocked(folder)) {
                         val statusMsg = "파일 다운로드: ${localFile.absolutePath}"
                         logger.log(statusMsg, folder.accountEmail)
                         currentStatusMessage = statusMsg
@@ -1950,6 +2088,7 @@ class SyncManager internal constructor(
         
         for (newPath in newPaths) {
             val localFile = File(newPath)
+            if (isAlwaysDownloadPath(folder, localFile)) continue
             val size = localFile.length()
             val newParentDriveId = ensureDriveParentFolderId(folder, localFile) ?: folder.driveFolderId
             var localMd5: String? = null
@@ -2051,6 +2190,7 @@ class SyncManager internal constructor(
                 val existingItem = syncItemDao.getSyncItemByLocalPath(path)
                 
                 if (localFile.exists()) {
+                    val alwaysDownload = isAlwaysDownloadPath(folder, localFile)
                     // Item exists locally - might be new or updated
                     val parentFolderId = ensureDriveParentFolderId(folder, localFile) ?: folder.driveFolderId
                     val driveFile = if (existingItem?.driveFileId != null) {
@@ -2099,6 +2239,14 @@ class SyncManager internal constructor(
                         conflicts.addAll(result.conflicts)
                         pendingUploads.addAll(result.pendingUploads)
                     } else if (existingItem != null && existingItem.driveFileId != null) {
+                        if (alwaysDownload) {
+                            logger.log(
+                                "정책(.obsidian): 추적 항목 복구 업로드 건너뜀(다운로드 우선): ${localFile.absolutePath}",
+                                folder.accountEmail
+                            )
+                            addSkipped("obsidian_always_download")
+                            continue
+                        }
                         // Tracked Drive ID is stale or inaccessible.
                         // For local-changed items, repair by uploading as a new file when policy allows.
                         if (isUploadBlocked(folder)) {
@@ -2155,6 +2303,11 @@ class SyncManager internal constructor(
                         }
                     } else {
                         // New local item - upload file or create folder
+                        if (alwaysDownload) {
+                            logger.log("정책(.obsidian): 로컬 신규 항목 업로드 건너뜀(다운로드 우선): ${localFile.absolutePath}", folder.accountEmail)
+                            addSkipped("obsidian_always_download")
+                            continue
+                        }
                         if (isUploadBlocked(folder)) {
                             logger.log("정책으로 로컬 신규 항목 업로드 건너뜀(DOWNLOAD_ONLY): ${localFile.absolutePath}", folder.accountEmail)
                             addSkipped("policy_blocked_upload")
@@ -2181,6 +2334,11 @@ class SyncManager internal constructor(
                         }
                     }
                 } else if (existingItem != null && !handledMissingIds.contains(existingItem.id)) {
+                    if (isAlwaysDownloadPath(folder, File(existingItem.localPath))) {
+                        logger.log("정책(.obsidian): 로컬 삭제 서버 반영 건너뜀(다운로드 우선): ${existingItem.localPath}", folder.accountEmail)
+                        addSkipped("obsidian_always_download")
+                        continue
+                    }
                     // File deleted locally - handle deletion
                     if (!isDeleteLikeLocalEvent(dirtyItem.eventType)) {
                         logger.log(
@@ -2304,9 +2462,12 @@ class SyncManager internal constructor(
     }
 
     private data class VerificationReportResult(
+        val result: String,
         val isPass: Boolean,
         val reportPath: String,
         val summary: String,
+        val missingLocalFiles: List<String> = emptyList(),
+        val missingLocalFolders: List<String> = emptyList(),
         val extraLocalFiles: List<String> = emptyList()
     )
 
@@ -2353,11 +2514,13 @@ class SyncManager internal constructor(
             statusMessage = "검증 스캔(Drive) 시작..."
         )
         val driveFiles = linkedMapOf<String, Long>()
+        val driveFileIds = linkedMapOf<String, String>()
         val driveFolders = linkedSetOf<String>()
         collectDriveTree(
             driveFolderId = folder.driveFolderId,
             prefix = "",
             files = driveFiles,
+            fileIds = driveFileIds,
             folders = driveFolders
         ) { scannedCount ->
             publishVerificationProgress(
@@ -2405,7 +2568,7 @@ class SyncManager internal constructor(
         val missingLocalFolders = (driveFolderPaths - localFolderPaths).sorted()
         val extraLocalFolders = (localFolderPaths - driveFolderPaths).sorted()
 
-        val sizeMismatches = (driveFilePaths intersect localFilePaths)
+        var sizeMismatches = (driveFilePaths intersect localFilePaths)
             .mapNotNull { path ->
                 val driveSize = driveFiles[path]
                 val localSize = localFiles[path]
@@ -2417,6 +2580,44 @@ class SyncManager internal constructor(
             }
             .sortedBy { it.path }
 
+        val obsidianSingleMismatchPath = sizeMismatches.singleOrNull()
+            ?.path
+            ?.takeIf { it.startsWith(".obsidian/") }
+        var obsidianMismatchPolicyNote: String? = null
+        if (obsidianSingleMismatchPath != null) {
+            val downloadResult = retryDownloadVerificationMismatch(
+                mismatchPath = obsidianSingleMismatchPath,
+                rootDir = rootDir,
+                driveFileIds = driveFileIds
+            )
+            if (downloadResult) {
+                localFiles[obsidianSingleMismatchPath] = File(rootDir, obsidianSingleMismatchPath).length()
+            }
+            sizeMismatches = (driveFilePaths intersect localFilePaths)
+                .mapNotNull { path ->
+                    val driveSize = driveFiles[path]
+                    val localSize = localFiles[path]
+                    if (driveSize != null && localSize != null && driveSize != localSize) {
+                        SizeMismatch(path = path, driveSize = driveSize, localSize = localSize)
+                    } else {
+                        null
+                    }
+                }
+                .sortedBy { it.path }
+
+            if (sizeMismatches.singleOrNull()?.path == obsidianSingleMismatchPath) {
+                // Obsidian state file can keep changing while app is open; treat this single mismatch as ignorable after retry.
+                sizeMismatches = emptyList()
+                obsidianMismatchPolicyNote =
+                    "single .obsidian size mismatch persisted after retry; treated as PASS by policy"
+                logger.log("[WARNING] 검증 정책 적용: $obsidianMismatchPolicyNote ($obsidianSingleMismatchPath)", folder.accountEmail)
+            } else {
+                obsidianMismatchPolicyNote =
+                    "single .obsidian size mismatch resolved by immediate redownload"
+                logger.log("검증 보정 완료: $obsidianMismatchPolicyNote ($obsidianSingleMismatchPath)", folder.accountEmail)
+            }
+        }
+
         val pathPrefixMismatch = detectPathPrefixMismatch(
             missingLocalFiles = missingLocalFiles,
             extraLocalFiles = extraLocalFiles,
@@ -2424,13 +2625,21 @@ class SyncManager internal constructor(
             extraLocalFolders = extraLocalFolders
         )
 
-        val isPass = missingLocalFiles.isEmpty() &&
+        val basePass = missingLocalFiles.isEmpty() &&
             extraLocalFiles.isEmpty() &&
             missingLocalFolders.isEmpty() &&
             extraLocalFolders.isEmpty() &&
             sizeMismatches.isEmpty()
+        val result = if (obsidianMismatchPolicyNote?.contains("treated as PASS by policy") == true) {
+            "WARN"
+        } else if (basePass) {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+        val isPass = result != "FAIL"
 
-        val summary = buildVerificationSummary(
+        var summary = buildVerificationSummary(
             missingLocalFiles = missingLocalFiles,
             extraLocalFiles = extraLocalFiles,
             missingLocalFolders = missingLocalFolders,
@@ -2438,6 +2647,13 @@ class SyncManager internal constructor(
             sizeMismatches = sizeMismatches,
             pathPrefixMismatch = pathPrefixMismatch
         )
+        if (obsidianMismatchPolicyNote != null) {
+            summary = if (summary == "PASS" || result == "WARN") {
+                "WARN | $obsidianMismatchPolicyNote"
+            } else {
+                "$summary | $obsidianMismatchPolicyNote"
+            }
+        }
 
         if (!isPass) {
             val missingFileRoots = buildTopRootBreakdown(missingLocalFiles)
@@ -2462,7 +2678,7 @@ class SyncManager internal constructor(
 
         val report = buildVerificationMarkdown(
             folder = folder,
-            isPass = isPass,
+            result = result,
             driveFiles = driveFiles,
             driveFolders = driveFolders,
             localFiles = localFiles,
@@ -2487,9 +2703,12 @@ class SyncManager internal constructor(
         uploadVerificationReportToDrive(folder, reportFile)
 
         return VerificationReportResult(
+            result = result,
             isPass = isPass,
             reportPath = reportFile.absolutePath,
             summary = summary,
+            missingLocalFiles = missingLocalFiles,
+            missingLocalFolders = missingLocalFolders,
             extraLocalFiles = extraLocalFiles
         )
     }
@@ -2513,6 +2732,7 @@ class SyncManager internal constructor(
         val root = File(folder.localPath).absoluteFile
         val newPending = mutableListOf<PendingUpload>()
         for (relativePath in relativePaths) {
+            if (isAlwaysDownloadRelativePath(relativePath)) continue
             val localFile = File(root, relativePath)
             if (!localFile.exists()) continue
             if (!localFile.isFile) continue
@@ -2587,6 +2807,7 @@ class SyncManager internal constructor(
         driveFolderId: String,
         prefix: String,
         files: MutableMap<String, Long>,
+        fileIds: MutableMap<String, String>,
         folders: MutableSet<String>,
         progressCounter: AtomicInteger = AtomicInteger(0),
         onProgress: ((Int) -> Unit)? = null
@@ -2595,6 +2816,7 @@ class SyncManager internal constructor(
         for (item in items) {
             val relativePath = if (prefix.isEmpty()) item.name else "$prefix/${item.name}"
             if (relativePath.split('/').contains(BACKUP_DIR_NAME)) continue
+            if (isVerificationArtifactRelativePath(relativePath)) continue
             if (isExcludedRelativePath(relativePath)) continue
             val scanned = progressCounter.incrementAndGet()
             if (scanned % 100 == 0) {
@@ -2602,12 +2824,25 @@ class SyncManager internal constructor(
             }
             if (item.isFolder) {
                 folders.add(relativePath)
-                collectDriveTree(item.id, relativePath, files, folders, progressCounter, onProgress)
+                collectDriveTree(item.id, relativePath, files, fileIds, folders, progressCounter, onProgress)
             } else {
                 files[relativePath] = item.size
+                fileIds[relativePath] = item.id
             }
         }
         onProgress?.invoke(progressCounter.get())
+    }
+
+    private suspend fun retryDownloadVerificationMismatch(
+        mismatchPath: String,
+        rootDir: File,
+        driveFileIds: Map<String, String>
+    ): Boolean {
+        val driveFileId = driveFileIds[mismatchPath] ?: return false
+        val localFile = File(rootDir, mismatchPath)
+        localFile.parentFile?.mkdirs()
+        val result = driveHelper.downloadFileDetailed(driveFileId, localFile.absolutePath)
+        return result.success
     }
 
     private fun collectLocalTree(
@@ -2626,6 +2861,7 @@ class SyncManager internal constructor(
 
             val segments = relativePath.split('/')
             if (segments.contains(BACKUP_DIR_NAME)) return@forEach
+            if (isVerificationArtifactRelativePath(relativePath)) return@forEach
             if (isExcludedRelativePath(relativePath)) return@forEach
 
             scanned++
@@ -2644,7 +2880,7 @@ class SyncManager internal constructor(
 
     private fun buildVerificationMarkdown(
         folder: SyncFolderEntity,
-        isPass: Boolean,
+        result: String,
         driveFiles: Map<String, Long>,
         driveFolders: Set<String>,
         localFiles: Map<String, Long>,
@@ -2666,7 +2902,7 @@ class SyncManager internal constructor(
         lines += "- Sync folder name: ${folder.driveFolderName}"
         lines += "- Sync local root: ${File(folder.localPath).absolutePath}"
         lines += "- Sync Drive folder ID: ${folder.driveFolderId}"
-        lines += "- Result: ${if (isPass) "PASS" else "FAIL"}"
+        lines += "- Result: $result"
         lines += "- Drive files: ${driveFiles.size}"
         lines += "- Local files: ${localFiles.size}"
         lines += "- Drive folders: ${driveFolders.size}"
@@ -2690,8 +2926,39 @@ class SyncManager internal constructor(
             }
         }
         lines += ""
+
+        val obsidianExcluded = isObsidianExcludedByUser()
+        val driveObsidianFiles = driveFiles.keys.count { it.startsWith(".obsidian/") }
+        val localObsidianFiles = localFiles.keys.count { it.startsWith(".obsidian/") }
+        val missingObsidianFiles = missingLocalFiles.count { it.startsWith(".obsidian/") }
+        val extraObsidianFiles = extraLocalFiles.count { it.startsWith(".obsidian/") }
+        val missingObsidianFolders = missingLocalFolders.count { it == ".obsidian" || it.startsWith(".obsidian/") }
+        val extraObsidianFolders = extraLocalFolders.count { it == ".obsidian" || it.startsWith(".obsidian/") }
+        val obsidianSizeMismatches = sizeMismatches.count { it.path.startsWith(".obsidian/") }
+        val obsidianCheckResult = when {
+            obsidianExcluded -> "SKIPPED (excluded)"
+            missingObsidianFiles == 0 &&
+                extraObsidianFiles == 0 &&
+                missingObsidianFolders == 0 &&
+                extraObsidianFolders == 0 &&
+                obsidianSizeMismatches == 0 -> "PASS"
+            else -> "WARN"
+        }
+        lines += "## Obsidian Sync Check"
+        lines += "- Exclusion setting: ${if (obsidianExcluded) "ON" else "OFF"}"
+        lines += "- Effective policy: ${if (obsidianExcluded) "excluded from sync" else "server-priority download (upload/delete blocked)"}"
+        lines += "- Drive .obsidian files: $driveObsidianFiles"
+        lines += "- Local .obsidian files: $localObsidianFiles"
+        lines += "- Missing .obsidian files: $missingObsidianFiles"
+        lines += "- Extra .obsidian files: $extraObsidianFiles"
+        lines += "- Missing .obsidian folders: $missingObsidianFolders"
+        lines += "- Extra .obsidian folders: $extraObsidianFolders"
+        lines += "- .obsidian size mismatches: $obsidianSizeMismatches"
+        lines += "- Check result: $obsidianCheckResult"
+        lines += ""
+
         lines += "## Failure Reasons"
-        if (isPass) {
+        if (result == "PASS") {
             lines += "- none"
         } else {
             if (missingLocalFolders.isNotEmpty()) lines += "- Missing local folders: ${missingLocalFolders.size}"
@@ -2710,7 +2977,7 @@ class SyncManager internal constructor(
         val extraFileRoots = buildTopRootBreakdown(extraLocalFiles)
         val extraFolderRoots = buildTopRootBreakdown(extraLocalFolders)
         lines += "## Debug Hints"
-        if (isPass) {
+        if (result == "PASS") {
             lines += "- none"
         } else {
             if (missingFileRoots.isNotEmpty()) {
@@ -3001,11 +3268,51 @@ class SyncManager internal constructor(
     }
 
     private fun isExcludedRelativePath(path: String): Boolean {
+        if (isAlwaysDownloadRelativePath(path) && !isObsidianExcludedByUser()) return false
         return SyncExclusions.isExcludedRelativePath(path, syncPreferences.userExcludedPaths)
     }
 
+    private fun isAlwaysDownloadRelativePath(path: String): Boolean {
+        val normalized = path.replace('\\', '/').trim().trimStart('/')
+        return normalized == ".obsidian" || normalized.startsWith(".obsidian/")
+    }
+
+    private fun isAlwaysDownloadPath(folder: SyncFolderEntity, file: File): Boolean {
+        return try {
+            val relPath = file.relativeTo(File(folder.localPath)).invariantSeparatorsPath
+            isAlwaysDownloadRelativePath(relPath)
+        } catch (_: IllegalArgumentException) {
+            val normalized = file.absolutePath.replace('\\', '/')
+            val root = File(folder.localPath).absolutePath.replace('\\', '/').trimEnd('/')
+            normalized.startsWith("$root/.obsidian/")
+        }
+    }
+
+    private fun isVerificationArtifactRelativePath(path: String): Boolean {
+        val normalized = path.replace('\\', '/')
+        return normalized.substringAfterLast('/') == VERIFY_REPORT_FILE_NAME
+    }
+
     private fun isExcludedAbsolutePath(path: String): Boolean {
+        val normalized = path.replace('\\', '/')
+        if ((normalized.contains("/.obsidian/") || normalized.endsWith("/.obsidian")) &&
+            !isObsidianExcludedByUser()
+        ) {
+            return false
+        }
         return SyncExclusions.isExcludedAbsolutePath(path, syncPreferences.userExcludedPaths)
+    }
+
+    private fun isObsidianExcludedByUser(): Boolean {
+        val rules = syncPreferences.userExcludedPaths
+        return rules.any { token ->
+            val sep = token.indexOf(':')
+            if (sep <= 0) return@any false
+            val type = token.substring(0, sep).lowercase()
+            val value = SyncExclusions.normalizeRelativePath(token.substring(sep + 1))
+            if (type !in setOf("file", "directory")) return@any false
+            value == ".obsidian" || value.startsWith(".obsidian/")
+        }
     }
 
     private fun isExcludedPath(folder: SyncFolderEntity, file: File): Boolean {
@@ -3014,6 +3321,56 @@ class SyncManager internal constructor(
             isExcludedRelativePath(relPath)
         } catch (_: IllegalArgumentException) {
             isExcludedAbsolutePath(file.absolutePath)
+        }
+    }
+
+    private suspend fun downloadDriveVersion(
+        folder: SyncFolderEntity,
+        localFile: File,
+        driveFile: uk.xmlangel.googledrivesync.data.drive.DriveItem,
+        existingItem: SyncItemEntity?
+    ): Boolean {
+        val statusMsg = "정책(.obsidian) 다운로드 우선 적용: ${localFile.absolutePath}"
+        logger.log(statusMsg, folder.accountEmail)
+        currentStatusMessage = statusMsg
+        return try {
+            val result = driveHelper.downloadFileDetailed(driveFile.id, localFile.absolutePath)
+            if (!result.success) {
+                if (result.skipped) {
+                    recordCurrentSyncDownloadFailure(
+                        path = localFile.absolutePath,
+                        reason = result.reason ?: "non_downloadable_google_type",
+                        mimeType = result.mimeType,
+                        isNonDownloadableSkip = true,
+                        accountEmail = folder.accountEmail
+                    )
+                } else {
+                    recordCurrentSyncDownloadFailure(
+                        path = localFile.absolutePath,
+                        reason = result.reason ?: "download_failed",
+                        mimeType = result.mimeType,
+                        isNonDownloadableSkip = false,
+                        accountEmail = folder.accountEmail
+                    )
+                    logger.log("[ERROR] 정책(.obsidian) 다운로드 실패: ${localFile.absolutePath}", folder.accountEmail)
+                }
+                return false
+            }
+            updateSyncItem(
+                existingItem = existingItem ?: createSyncItem(folder, localFile, driveFile.id, driveFile.md5Checksum),
+                localFile = localFile,
+                driveFileId = driveFile.id,
+                driveModifiedTime = driveFile.modifiedTime,
+                driveSize = driveFile.size,
+                status = SyncStatus.SYNCED,
+                md5Checksum = driveFile.md5Checksum
+            )
+            true
+        } catch (e: Exception) {
+            if (isFatalNetworkError(e)) throw e
+            val exceptionMsg = e.message ?: e.javaClass.simpleName
+            logger.log("[ERROR] 정책(.obsidian) 다운로드 예외: ${localFile.absolutePath} ($exceptionMsg)", folder.accountEmail)
+            false
         }
     }
 
@@ -3041,6 +3398,7 @@ class SyncManager internal constructor(
         }
         reportFile.writeText(report, Charsets.UTF_8)
         return VerificationReportResult(
+            result = "SKIPPED",
             isPass = true,
             reportPath = reportFile.absolutePath,
             summary = "verification skipped due to network condition"
@@ -3544,7 +3902,7 @@ class SyncManager internal constructor(
         return try {
             val verification = generateAndSaveVerificationReport(folder)
             VerificationExecution(
-                result = if (verification.isPass) "PASS" else "FAIL",
+                result = verification.result,
                 reportPath = verification.reportPath,
                 summary = verification.summary
             )

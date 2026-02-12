@@ -15,14 +15,7 @@ object SyncExclusions {
         fun toStorageToken(): String = "${type.name.lowercase()}:$value"
     }
 
-    private val defaultRules = listOf(
-        Rule(
-            type = SyncExclusionType.FILE,
-            value = ".obsidian/workspace.json",
-            source = "system",
-            reason = "기기별 UI 상태 파일로 충돌이 잦아 동기화에서 제외"
-        )
-    )
+    private val defaultRules = emptyList<Rule>()
 
     fun defaults(): List<Rule> = defaultRules
 

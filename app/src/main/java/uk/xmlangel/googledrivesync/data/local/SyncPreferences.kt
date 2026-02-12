@@ -29,6 +29,7 @@ class SyncPreferences(context: Context) {
         private const val KEY_AUTO_UPLOAD_ENABLED = "auto_upload_enabled"
         private const val KEY_REALTIME_SYNC_ENABLED = "realtime_sync_enabled"
         private const val KEY_USER_EXCLUDED_PATHS = "user_excluded_paths"
+        private const val KEY_OBSIDIAN_EXCLUSION_INITIALIZED = "obsidian_exclusion_initialized"
         
         const val DEFAULT_SYNC_INTERVAL = 15 // minutes (Default changed from 60 to 15)
     }
@@ -168,6 +169,13 @@ class SyncPreferences(context: Context) {
     fun addUserExcludedRule(type: SyncExclusionType, value: String) {
         val token = SyncExclusions.buildUserRuleToken(type, value) ?: return
         userExcludedPaths = userExcludedPaths + token
+    }
+
+    fun ensureObsidianExclusionDefault() {
+        if (!prefs.getBoolean(KEY_OBSIDIAN_EXCLUSION_INITIALIZED, false)) {
+            addUserExcludedRule(SyncExclusionType.DIRECTORY, ".obsidian")
+            prefs.edit { putBoolean(KEY_OBSIDIAN_EXCLUSION_INITIALIZED, true) }
+        }
     }
 
     fun removeUserExcludedPath(relativePath: String) {

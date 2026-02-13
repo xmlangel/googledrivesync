@@ -30,7 +30,9 @@ import java.text.SimpleDateFormat
 import java.util.*
 import coil.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import uk.xmlangel.googledrivesync.data.model.GoogleAccount
 import uk.xmlangel.googledrivesync.data.repository.AccountRepository
 import uk.xmlangel.googledrivesync.util.AppVersionUtil
@@ -60,37 +62,44 @@ fun AccountScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         isLoading = false
-        logger.log("signInLauncher result: resultCode=${result.resultCode}")
-        if (result.resultCode == Activity.RESULT_OK) {
-            try {
-                val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                logger.log("signInLauncher intent data received")
-                val googleAccount = task.getResult(ApiException::class.java)
-                if (googleAccount != null) {
-                    logger.log("구글 로그인 성공: ${googleAccount.email}, id=${googleAccount.id}")
-                    accountRepository.handleSignInResult(googleAccount)
-                    // We don't navigate immediately here. 
-                    // Let the LaunchedEffect below handle it when activeAccount state updates.
-                } else {
-                    errorMessage = "로그인 정보를 가져올 수 없습니다."
-                    logger.log("[ERROR] 구글 로그인 실패: account is null")
-                }
-            } catch (e: ApiException) {
-                errorMessage = "로그인 실패: ${e.message} (Status Code: ${e.statusCode})"
-                logger.log("[ERROR] 구글 로그인 API 오류: ${e.message}, code=${e.statusCode}")
-                if (e.statusCode == 10) {
-                    errorMessage += "\n(개발자 매개변수 오류: SHA-1이 Google Cloud Console에 등록되었는지 확인하세요)"
-                }
-            } catch (e: Exception) {
-                errorMessage = "예기치 못한 오류가 발생했습니다: ${e.message}"
-                logger.log("[ERROR] 구글 로그인 처리 중 오류: ${e.message}")
-                e.printStackTrace()
+        logger.log(
+            "signInLauncher result: resultCode=${result.resultCode}, hasData=${result.data != null}, dataAction=${result.data?.action}"
+        )
+        try {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            val googleAccount = task.getResult(ApiException::class.java)
+            if (googleAccount != null) {
+                logger.log("구글 로그인 성공: ${googleAccount.email}, id=${googleAccount.id}")
+                accountRepository.handleSignInResult(googleAccount)
+                // We don't navigate immediately here.
+                // Let the LaunchedEffect below handle it when activeAccount state updates.
+            } else {
+                errorMessage = "로그인 정보를 가져올 수 없습니다."
+                logger.log("[ERROR] 구글 로그인 실패: account is null")
             }
-        } else if (result.resultCode == Activity.RESULT_CANCELED) {
-            logger.log("구글 로그인 취소됨")
-        } else {
-            errorMessage = "로그인 과정에서 오류가 발생했습니다. (Result Code: ${result.resultCode})"
-            logger.log("[ERROR] 구글 로그인 실패: resultCode=${result.resultCode}")
+        } catch (e: ApiException) {
+            val statusLabel = when (e.statusCode) {
+                GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> "SIGN_IN_CANCELLED"
+                GoogleSignInStatusCodes.SIGN_IN_CURRENTLY_IN_PROGRESS -> "SIGN_IN_CURRENTLY_IN_PROGRESS"
+                CommonStatusCodes.DEVELOPER_ERROR -> "DEVELOPER_ERROR"
+                CommonStatusCodes.NETWORK_ERROR -> "NETWORK_ERROR"
+                CommonStatusCodes.INTERNAL_ERROR -> "INTERNAL_ERROR"
+                else -> "UNKNOWN"
+            }
+            logger.log(
+                "[ERROR] 구글 로그인 API 오류: code=${e.statusCode}($statusLabel), message=${e.message}, resultCode=${result.resultCode}"
+            )
+
+            errorMessage = when (e.statusCode) {
+                GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> "로그인이 취소되었습니다. 계정 선택 창이 닫혔거나 인증이 중단되었습니다."
+                CommonStatusCodes.DEVELOPER_ERROR -> "로그인 설정 오류(DEVELOPER_ERROR: 10). SHA-1/패키지명/OAuth Client 설정을 확인하세요."
+                CommonStatusCodes.NETWORK_ERROR -> "네트워크 오류로 로그인에 실패했습니다. 연결 상태를 확인하세요."
+                else -> "로그인 실패: ${e.message} (Status Code: ${e.statusCode}, $statusLabel)"
+            }
+        } catch (e: Exception) {
+            errorMessage = "예기치 못한 오류가 발생했습니다: ${e.message}"
+            logger.log("[ERROR] 구글 로그인 처리 중 오류: ${e.message}")
+            e.printStackTrace()
         }
     }
 

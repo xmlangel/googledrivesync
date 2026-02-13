@@ -13,6 +13,8 @@ This version focuses on adding local folder creation and improving storage acces
 
 ### 3. Sync Exclusion Stabilization
 - Refined the sync exclusion filtering logic and strengthened related test cases.
+- Added Git metadata paths (`.git/`, `.gitignore`, `.gitattributes`, `.gitmodules`, `.gitkeep`) to default exclusions.
+- These Git paths are excluded not only from local scans, but also from server-side (Drive) change processing.
 
 ### 4. Version Bump
 - Bumped app version to `1.6.7` (`versionCode 32`).

@@ -79,6 +79,32 @@
 1. 상단 메뉴에서 `Build` > `Build Bundle(s) / APK(s)` > `Build APK(s)`를 선택합니다.
 2. 빌드가 완료되면 오른쪽 하단에 나타나는 알림에서 `locate` 링크를 클릭하여 생성된 파일을 확인합니다.
 
+### 5. 테스트 실행 방법
+
+프로젝트의 안정성을 확인하기 위해 다음 테스트 명령어를 사용할 수 있습니다.
+
+#### 단위 테스트 (Unit Tests)
+
+GitHub Actions에서 자동 수행되는 테스트와 동일한 명령어를 실행하려면 다음을 사용하세요:
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+프로젝트의 모든 유닛 테스트를 실행하려면 다음 명령어를 사용하세요:
+
+```bash
+./gradlew test
+```
+
+#### 기기 테스트 (Instrumented Tests)
+
+실제 기기나 에뮬레이터에서 실행되는 테스트를 수행하려면 다음 명령어를 사용하세요:
+
+```bash
+./gradlew connectedAndroidTest
+```
+
 ## 개발 스택
 
 - **언어**: Kotlin

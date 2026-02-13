@@ -4018,6 +4018,15 @@ class SyncManager internal constructor(
                             } else null
 
                             val existingItem = syncItemDao.getSyncItemByDriveId(driveFileId)
+                            val excludedByRule = when {
+                                existingItem != null && parentPath != null -> isExcludedPath(folder, File(parentPath, driveFile.name))
+                                existingItem != null -> isExcludedPath(folder, File(existingItem.localPath))
+                                parentPath != null -> isExcludedPath(folder, File(parentPath, driveFile.name))
+                                else -> false
+                            }
+                            if (excludedByRule) {
+                                skipped++; continue
+                            }
                             if (existingItem != null) {
                                 val currentLocalFile = File(existingItem.localPath)
                                 val targetLocalFile = if (parentPath != null) File(parentPath, driveFile.name) else currentLocalFile
@@ -4042,9 +4051,6 @@ class SyncManager internal constructor(
                                 
                                 // Skip local files containing "_local"
                                 if (localFile.name.contains("_local")) {
-                                    skipped++; continue
-                                }
-                                if (isExcludedPath(folder, localFile)) {
                                     skipped++; continue
                                 }
                                 
@@ -4077,7 +4083,7 @@ class SyncManager internal constructor(
                                 if (localFile.name.contains("_local")) {
                                     skipped++; continue
                                 }
-                                
+
                                 val pairResult = if (driveFile.isFolder) {
                                     metadataChanges++
                                     // It's a new folder, create it

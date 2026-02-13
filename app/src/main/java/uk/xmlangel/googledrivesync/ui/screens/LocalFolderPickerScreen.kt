@@ -1,18 +1,22 @@
 package uk.xmlangel.googledrivesync.ui.screens
 
 import android.os.Environment
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import uk.xmlangel.googledrivesync.util.FileUtils
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -24,11 +28,14 @@ fun LocalFolderPickerScreen(
     onFolderSelected: (localPath: String, clearLocalData: Boolean) -> Unit,
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
     var currentPath by remember { mutableStateOf(rootPath) }
     var folders by remember { mutableStateOf<List<File>>(emptyList()) }
     var pathStack by remember { mutableStateOf(listOf<String>()) }
     var showSelectionConfirmDialog by remember { mutableStateOf(false) }
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
     
     LaunchedEffect(currentPath) {
         val dir = File(currentPath)
@@ -60,7 +67,15 @@ fun LocalFolderPickerScreen(
                             onNavigateBack()
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, "뒤로")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { 
+                        newFolderName = ""
+                        showCreateFolderDialog = true 
+                    }) {
+                        Icon(Icons.Default.CreateNewFolder, "새 폴더 생성")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -228,6 +243,54 @@ fun LocalFolderPickerScreen(
                     }
                 ) {
                     Text("삭제 안함")
+                }
+            }
+        )
+    }
+
+    if (showCreateFolderDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateFolderDialog = false },
+            title = { Text("새 폴더 생성") },
+            text = {
+                Column {
+                    Text("생성할 폴더 이름을 입력하세요.")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { newFolderName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("폴더 이름") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val sanitized = FileUtils.sanitizeFileName(newFolderName)
+                        val newDir = File(currentPath, sanitized)
+                        if (newDir.exists()) {
+                            Toast.makeText(context, "이미 존재하는 이름입니다.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val success = newDir.mkdirs()
+                            if (success) {
+                                pathStack = pathStack + currentPath
+                                currentPath = newDir.absolutePath
+                                showCreateFolderDialog = false
+                            } else {
+                                Toast.makeText(context, "폴더 생성에 실패했습니다.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = newFolderName.isNotBlank()
+                ) {
+                    Text("생성")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateFolderDialog = false }) {
+                    Text("취소")
                 }
             }
         )

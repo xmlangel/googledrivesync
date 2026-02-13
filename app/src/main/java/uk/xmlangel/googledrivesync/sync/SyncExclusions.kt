@@ -15,7 +15,44 @@ object SyncExclusions {
         fun toStorageToken(): String = "${type.name.lowercase()}:$value"
     }
 
-    private val defaultRules = emptyList<Rule>()
+    private val defaultRules = listOf(
+        Rule(
+            SyncExclusionType.DIRECTORY,
+            ".git",
+            "default",
+            "Git metadata directory"
+        ),
+        Rule(
+            SyncExclusionType.FILE,
+            ".gitignore",
+            "default",
+            "Git ignore rules file"
+        ),
+        Rule(
+            SyncExclusionType.FILE,
+            ".gitattributes",
+            "default",
+            "Git attributes file"
+        ),
+        Rule(
+            SyncExclusionType.FILE,
+            ".gitmodules",
+            "default",
+            "Git submodules manifest"
+        ),
+        Rule(
+            SyncExclusionType.FILE,
+            ".gitkeep",
+            "default",
+            "Git placeholder file"
+        ),
+        Rule(
+            SyncExclusionType.FILE,
+            ".obsidian/workspace.json",
+            "default",
+            "Obsidian workspace state (noisy)"
+        )
+    )
 
     fun defaults(): List<Rule> = defaultRules
 

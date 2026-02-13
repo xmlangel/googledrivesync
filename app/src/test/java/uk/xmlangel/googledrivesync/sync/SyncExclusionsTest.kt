@@ -13,6 +13,22 @@ class SyncExclusionsTest {
     }
 
     @Test
+    fun `default exclusion contains git directory`() {
+        assertTrue(SyncExclusions.isExcludedRelativePath(".git"))
+        assertTrue(SyncExclusions.isExcludedRelativePath(".git/config"))
+        assertFalse(SyncExclusions.isExcludedRelativePath(".github/workflows/android_build.yml"))
+    }
+
+    @Test
+    fun `default exclusion contains git metadata files`() {
+        assertTrue(SyncExclusions.isExcludedRelativePath(".gitignore"))
+        assertTrue(SyncExclusions.isExcludedRelativePath(".gitattributes"))
+        assertTrue(SyncExclusions.isExcludedRelativePath(".gitmodules"))
+        assertTrue(SyncExclusions.isExcludedRelativePath(".gitkeep"))
+        assertFalse(SyncExclusions.isExcludedRelativePath(".github/CODEOWNERS"))
+    }
+
+    @Test
     fun `user file exclusion matches exact file only`() {
         val userRules = setOf("file:Attachments/sample.png")
         assertTrue(SyncExclusions.isExcludedRelativePath("Attachments/sample.png", userRules))
@@ -59,4 +75,3 @@ class SyncExclusionsTest {
         assertFalse(SyncExclusions.isExcludedRelativePath("a.txt", userRules))
     }
 }
-
